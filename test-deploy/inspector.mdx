@@ -1,0 +1,150 @@
+---
+title: "Rasa Inspector: Debug and Visualize Conversations"
+sidebarTitle: "Inspector"
+description: "Use the Rasa Inspector to interactively debug conversations, visualize active flows, inspect slot values, and review LLM commands in your browser."
+---
+
+The Rasa Inspector is a browser-based debugging tool that lets you chat with your trained assistant while watching its internals update in real time. After every message you send, you can see which flow activated, which step is current, what slots were set, and what commands the LLM generated. This immediate feedback loop makes the Inspector the fastest way to validate a new flow, diagnose an unexpected response, or demonstrate assistant behavior to teammates—all without writing a formal test.
+
+## Launching the Inspector
+
+Train your assistant first, then launch the Inspector with a single command:
+
+```bash
+rasa train
+rasa inspect
+```
+
+This starts your assistant locally and opens a new browser tab with the Inspector interface. The Inspector connects to the last trained model automatically, so you don't need to pass any extra flags for a standard debugging session.
+
+## Interface overview
+
+The Inspector splits your browser window into four panes:
+
+<Steps>
+  <Step title="Chat Widget">
+    The chat widget on the left lets you type messages and receive responses just as a user would. Start a conversation here and watch the other panes update after each turn. A **Restart Conversation** button at the bottom of the flow view resets the session so you can try alternative paths without reloading the page.
+  </Step>
+  <Step title="Flow View">
+    The Flow View renders the currently active flow as a flowchart with the current step highlighted. Click any row in the Stack View to switch the Flow View to a different active flow and inspect its state at that point in the conversation.
+  </Step>
+  <Step title="Stack View">
+    The Stack View lists all currently active flows from bottom (oldest) to top (newest). The topmost entry is the flow your assistant is currently executing. Flows listed below it are paused and will resume once the flows above them complete.
+
+    Each row shows:
+    - **ID**: a unique identifier for this stack frame
+    - **Flow**: the flow identifier, matching the name in your `flows.yml`
+    - **Step ID**: the current step identifier within that flow
+  </Step>
+  <Step title="Slots, E2E Test, and Tracker State">
+    This panel has three tabs:
+    - **Slots**: all slot names and their current values
+    - **End-2-End Test**: the current conversation rendered in E2E test YAML format, ready to copy into a test file
+    - **Tracker State**: the raw event history including user messages, LLM commands, slot set events, and actions executed
+  </Step>
+</Steps>
+
+## Exporting conversations as E2E tests
+
+The **End-2-End Test** tab is one of the most useful Inspector features. As you chat with your assistant, the tab updates to show your conversation in the exact YAML format required by `rasa test e2e`. When you find a conversation that exercises the behavior you want to cover, copy the YAML directly into your `tests/e2e_test_cases.yml` file.
+
+This workflow—explore in the Inspector, export to E2E tests—is the fastest way to build up a test suite from real conversation paths.
+
+## Testing voice assistants
+
+The Inspector supports voice conversations when you have speech integrations configured. Add the `browser_audio` channel to your `credentials.yml` with your chosen ASR and TTS services:
+
+```yaml
+browser_audio:
+  server_url: localhost
+  asr:
+    name: deepgram
+  tts:
+    name: cartesia
+```
+
+Set the required API keys as environment variables:
+
+```bash
+export CARTESIA_API_KEY=your_cartesia_key
+export DEEPGRAM_API_KEY=your_deepgram_key
+```
+
+Then launch the Inspector with the `--voice` flag:
+
+```bash
+rasa inspect --voice
+```
+
+The browser tab will include audio controls so you can speak to your assistant and hear its responses while the debugging panes update alongside the conversation.
+
+## Inspecting conversations over external channels
+
+You can also use the Inspector to debug conversations happening over external channels—REST, Slack, Twilio, and others. This is useful when you need to debug a production-like integration without deploying to a real environment.
+
+Configure your channel in `credentials.yml`:
+
+```yaml
+rest:
+```
+
+Then start Rasa with the `--inspect` flag instead of the usual `run` command:
+
+```bash
+rasa run --inspect
+```
+
+Rasa will print an Inspector URL for each configured channel:
+
+```
+Development inspector for channel rest is running.
+To inspect conversations, visit http://localhost:5005/webhooks/rest/inspect.html
+```
+
+Open that URL in your browser, then send a message through the channel. The first conversation that comes in will appear in the Inspector:
+
+```bash
+curl -X POST 'http://localhost:5005/webhooks/rest/webhook' \
+  --header 'Content-Type: application/json' \
+  --data-raw '{
+    "sender": "test_user",
+    "message": "I would like to transfer money"
+  }'
+```
+
+The Inspector will show the full conversation with all debugging panes active, just as in a local `rasa inspect` session.
+
+## Step-by-step: debug a conversation
+
+<Steps>
+  <Step title="Train your model">
+    ```bash
+    rasa train
+    ```
+  </Step>
+  <Step title="Open the Inspector">
+    ```bash
+    rasa inspect
+    ```
+    Your browser opens automatically to the Inspector tab.
+  </Step>
+  <Step title="Send a test message">
+    Type a message in the Chat Widget that you expect to trigger a specific flow—for example, "I want to transfer money."
+  </Step>
+  <Step title="Check the Flow View">
+    Confirm the correct flow is highlighted in the Flow View and that the step shown matches where you expect the conversation to be.
+  </Step>
+  <Step title="Inspect slot values">
+    Open the **Slots** tab and verify that slot extraction produced the right values.
+  </Step>
+  <Step title="Review the Tracker State">
+    Open the **Tracker State** tab to see the raw event sequence: the user message, the LLM-predicted command, any slot set events, and the actions that ran.
+  </Step>
+  <Step title="Export the conversation">
+    If the conversation looks correct, switch to the **End-2-End Test** tab and copy the YAML to add it to your test suite.
+  </Step>
+</Steps>
+
+<Tip>
+  Use the Inspector's Restart Conversation button to quickly test alternative phrasings of the same user intent. This is much faster than relaunching the Inspector each time.
+</Tip>

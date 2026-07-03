@@ -1,0 +1,217 @@
+---
+title: "Rasa Action Server: Hosting and Configuring Custom Actions"
+sidebarTitle: "Action Server"
+description: "Learn how to host and configure the Rasa Action Server, choose between standalone and integrated execution, and implement non-Python action servers."
+---
+
+The Rasa Action Server is the runtime that executes your [custom actions](/build/custom-actions). When your assistant predicts a custom action, Rasa sends an HTTP POST request to the action server with information about the conversation. The action server runs your code, then returns events and responses that Rasa applies to the conversation.
+
+You have two options for how to host your custom actions: as a **standalone server** that runs in its own process, or as **integrated execution** that runs inside the Rasa process itself. Both options use the same Python action code — only the deployment model differs.
+
+## How It Works
+
+```
+User message
+     │
+     ▼
+Rasa Server  ──POST /webhook──▶  Action Server
+                                  │ executes custom action code
+Rasa Server  ◀──events+responses── │
+     │
+     ▼
+Response sent to user
+```
+
+1. Rasa predicts that a custom action should run.
+2. Rasa sends a `POST` request to `/webhook` on your action server containing the action name, conversation tracker, and domain.
+3. Your action server runs the corresponding action code.
+4. The action server returns a JSON payload of events (e.g., `SlotSet`) and responses (e.g., messages to send).
+5. Rasa applies the events to the tracker and forwards the responses to the user.
+
+## Option 1: Standalone Action Server
+
+The standalone action server runs as a separate process and communicates with Rasa over HTTP or gRPC. This is the recommended approach for production deployments.
+
+### Starting the standalone server
+
+<Tabs>
+  <Tab title="HTTP">
+    ```bash
+    rasa run actions
+    ```
+
+    Or run it directly as a Python module:
+
+    ```bash
+    python -m rasa_sdk
+    ```
+  </Tab>
+  <Tab title="HTTPS">
+    ```bash
+    rasa run actions \
+      --ssl-certificate /path/to/ssl_server_certificate \
+      --ssl-keyfile /path/to/ssl_server_key
+    ```
+  </Tab>
+  <Tab title="gRPC">
+    ```bash
+    rasa run actions --grpc
+    ```
+
+    For secure gRPC:
+
+    ```bash
+    rasa run actions --grpc \
+      --ssl-certificate /path/to/ssl_server_certificate \
+      --ssl-keyfile /path/to/ssl_server_key
+    ```
+  </Tab>
+</Tabs>
+
+By default the server looks for your actions in `actions.py` or a package directory called `actions`. To specify a different module:
+
+```bash
+rasa run actions --actions my_custom_actions
+```
+
+### Configuring the endpoint
+
+Tell Rasa where your action server is running by setting `action_endpoint` in `endpoints.yml`:
+
+<Tabs>
+  <Tab title="HTTP">
+    ```yaml endpoints.yml
+    action_endpoint:
+      url: "http://localhost:5055/webhook"
+    ```
+  </Tab>
+  <Tab title="HTTPS">
+    ```yaml endpoints.yml
+    action_endpoint:
+      url: "https://localhost:5055/webhook"
+      cafile: "/path/to/ssl_ca_certificate"
+    ```
+  </Tab>
+  <Tab title="gRPC">
+    ```yaml endpoints.yml
+    action_endpoint:
+      url: "grpc://localhost:5055"
+    ```
+
+    For secure gRPC:
+
+    ```yaml endpoints.yml
+    action_endpoint:
+      url: "grpc://localhost:5055"
+      cafile: "/path/to/ssl_ca_certificate"
+    ```
+  </Tab>
+</Tabs>
+
+## Option 2: Integrated Execution
+
+Integrated execution runs your Python action code directly inside the Rasa process — no separate server, no network round-trip. This simplifies local development and reduces latency.
+
+### Configuring integrated execution
+
+Set the `actions_module` field in `endpoints.yml` to the Python package or module where your actions live:
+
+```yaml endpoints.yml
+action_endpoint:
+  actions_module: "actions"
+```
+
+For a project structured like this:
+
+```
+my_project/
+├── actions/
+│   ├── __init__.py
+│   └── actions.py
+├── domain.yml
+├── config.yml
+└── endpoints.yml
+```
+
+The value `"actions"` tells Rasa to import the `actions` package from your project root.
+
+<Note>
+  `actions_module` and `url` are mutually exclusive. If both are present, `actions_module` takes priority.
+</Note>
+
+<Warning>
+  After any change to your custom action code, restart the Rasa server with `rasa run` or `rasa inspect` for the changes to take effect. Hot-reloading is not supported in integrated mode.
+</Warning>
+
+## Choosing Between Standalone and Integrated
+
+| | Standalone Server | Integrated Execution |
+|---|---|---|
+| **Deployment complexity** | Higher — separate process to manage | Lower — single process |
+| **Latency** | Higher — network round-trip per action | Lower — in-process call |
+| **Isolation** | High — action code runs separately | Low — shares Rasa's memory space |
+| **Scaling** | Independent — scale action server separately | Coupled to Rasa process |
+| **Security** | Better — credentials stay in action server | Rasa needs access to all credentials |
+| **Best for** | Production, resource-intensive actions, strict security requirements | Local development, simple deployments, low-latency requirements |
+
+## Non-Python Action Servers
+
+If your business logic lives in another language (Java, Node.js, Go, etc.), you can implement your own action server. The only requirement is a `POST /webhook` endpoint that accepts Rasa's JSON payload and returns events and responses in the expected format.
+
+### Request payload (from Rasa)
+
+```json
+{
+  "next_action": "action_check_balance",
+  "sender_id": "user-123",
+  "tracker": {
+    "sender_id": "user-123",
+    "slots": {
+      "account_id": "ACC-456",
+      "balance": null
+    },
+    "latest_message": {
+      "text": "What's my balance?",
+      "intent": { "name": "ask_balance", "confidence": 0.98 }
+    },
+    "events": [],
+    "paused": false
+  },
+  "domain": { ... },
+  "version": "3.x.x"
+}
+```
+
+### Response payload (from your server)
+
+```json
+{
+  "events": [
+    {
+      "event": "slot",
+      "name": "account_balance",
+      "value": 1250.00
+    }
+  ],
+  "responses": [
+    {
+      "text": "Your current balance is $1,250.00."
+    }
+  ]
+}
+```
+
+Point Rasa at your custom server the same way as a standalone Python server:
+
+```yaml endpoints.yml
+action_endpoint:
+  url: "http://my-custom-action-server:8080/webhook"
+```
+
+<Note>
+  The Rasa SDK (Python) handles the webhook protocol automatically. If you implement the webhook yourself, refer to the [Action Server API specification](https://rasa.com/docs/reference/api/pro/action-server-api/) for the full request and response schema.
+</Note>
+
+## Performance Optimisation
+
+Rasa caches the domain object on the action server to avoid sending it with every request. The first time an action runs after a model reload, Rasa sends the full domain. On subsequent requests, it sends only a `domain_digest` checksum. If the action server's cached digest matches, it skips re-sending the domain — reducing payload size significantly in high-traffic deployments.

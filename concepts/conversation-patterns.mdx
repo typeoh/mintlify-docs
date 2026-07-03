@@ -1,0 +1,216 @@
+---
+title: "Conversation Patterns: Handling Unexpected User Input"
+sidebarTitle: "Patterns"
+description: "Conversation patterns are pre-built CALM flows that handle topic changes, corrections, clarifications, cancellations, and other unexpected user inputs."
+---
+
+Real conversations are rarely linear. Users switch topics mid-task, correct themselves, ask a question out of nowhere, or decide they want to cancel and start over. Conversation patterns are pre-built system flows provided by CALM that handle these non-linear moments automatically — so you can focus on designing great user journeys instead of accounting for every possible detour.
+
+Every pattern works out of the box with no configuration. You can customize any pattern to fit your specific use case by overriding its default flow.
+
+## Why Patterns Matter
+
+Without patterns, any unexpected input risks derailing a conversation entirely. A user asking "wait, what's my balance?" in the middle of a money transfer would confuse a naive dialogue system. With patterns, CALM detects the situation, handles it gracefully, and — where appropriate — returns the user to what they were doing before.
+
+<CardGroup cols={2}>
+  <Card title="Keeps Conversations on Track" icon="route">
+    Patterns intercept unexpected inputs before they break your flows, leading to higher task completion rates and a better user experience.
+  </Card>
+  <Card title="Simplifies Design" icon="pen-ruler">
+    You define the happy path in your flows. CALM handles the detours. You don't need to build branching logic for every possible off-script moment.
+  </Card>
+</CardGroup>
+
+## How Patterns Work
+
+When a user message doesn't fit the current flow's expected input, CALM's dialogue understanding component detects it and issues a command that activates the appropriate pattern flow. The pattern runs, resolves the situation, and (depending on the pattern type) the original flow resumes.
+
+For example, if a user corrects a slot value mid-flow:
+
+```
+User: I want to send $50 to Alice.
+Bot:  Got it. Confirming: send $50 to Alice?
+User: Actually, make it $75.
+→ pattern_correction triggered
+Bot:  Updated the amount to $75. Do you want to confirm?
+```
+
+CALM detected the correction, ran `pattern_correction` to update the slot, and returned to the confirmation step — all automatically.
+
+## Pattern Categories
+
+| Category | Patterns | What They Handle |
+|---|---|---|
+| **Conversation Repair** | `pattern_correction`, `pattern_clarification`, `pattern_continue_interrupted` | Mistakes, ambiguity, and topic switches |
+| **Conversation Navigation** | `pattern_cancel_flow`, `pattern_completed`, `pattern_skip_question`, `pattern_restart` | Cancellations, completions, skipping steps, and restarts |
+| **External Support** | `pattern_search`, `pattern_human_handoff`, `pattern_chitchat` | Knowledge base queries, human escalation, and small talk |
+| **Voice** | `pattern_repeat_bot_messages`, `pattern_user_silence` | Repeat requests and handling silence timeouts |
+| **System Error** | `pattern_internal_error`, `pattern_cannot_handle`, `pattern_code_change` | Technical failures, unsupported requests, and assistant updates |
+
+## Common Patterns in Action
+
+<Accordion title="Correction — updating a previously provided value">
+  When a user corrects something they said earlier, `pattern_correction` updates the slot and confirms the change:
+
+  ```
+  User: I want to send money to Joe.
+  Bot:  How much would you like to send?
+  User: $50.
+  Bot:  Confirm: send $50 to Joe?
+  User: Oh wait — I meant John, not Joe!
+  → pattern_correction triggered
+  Bot:  Got it! Updating the recipient to John.
+        Confirm: send $50 to John?
+  ```
+</Accordion>
+
+<Accordion title="Cancellation — stopping a task mid-flow">
+  When a user abandons a task, `pattern_cancel_flow` stops the current flow cleanly:
+
+  ```
+  User: I want to transfer money to Dimitri.
+  Bot:  How much would you like to send?
+  User: Actually, never mind. I already sent it earlier.
+  → pattern_cancel_flow triggered
+  Bot:  Okay, I'm cancelling the transfer.
+  ```
+</Accordion>
+
+<Accordion title="Clarification — disambiguating an ambiguous request">
+  When the user's message could match multiple flows, `pattern_clarification` asks them to choose:
+
+  ```
+  User: card
+  → pattern_clarification triggered
+  Bot:  Would you like to freeze your card, cancel it, or order a new one?
+  User: cancel
+  → start flow cancel_card
+  Bot:  I'll help you cancel your card. Which card would you like to cancel?
+  ```
+</Accordion>
+
+<Accordion title="Topic change mid-flow">
+  When a user switches topics while a flow is active, `pattern_continue_interrupted` tracks the interrupted flow and offers to resume it:
+
+  ```
+  User: I want to book a flight to Paris.
+  Bot:  What date would you like to fly?
+  User: Actually, what's my current account balance?
+  → pattern_continue_interrupted triggered
+  Bot:  Your balance is $2,340. Would you like to continue booking your flight to Paris?
+  User: Yes, please.
+  → flow book_flight resumes
+  Bot:  What date would you like to fly?
+  ```
+</Accordion>
+
+<Accordion title="Human Handoff — escalating to a live agent">
+  When a user requests a human, `pattern_human_handoff` handles the escalation. By default, it informs the user that a human isn't available, but you can override it to connect to your live chat system:
+
+  ```
+  User: I'd like to speak to a real person.
+  → pattern_human_handoff triggered
+  Bot:  I understand you'd like to speak with a human agent.
+        Let me connect you now.
+  ```
+</Accordion>
+
+<Accordion title="Completion — wrapping up and offering more help">
+  When a user finishes a flow, `pattern_completed` asks if they need anything else and optionally collects satisfaction feedback via `pattern_customer_satisfaction`:
+
+  ```
+  → flow transfer_money completed
+  → pattern_completed triggered
+  Bot:  Your transfer is complete! Is there anything else I can help you with?
+  User: No, that's all.
+  → pattern_customer_satisfaction triggered
+  Bot:  How would you rate your experience today?
+        👍 Satisfied   👎 Not Satisfied
+  ```
+</Accordion>
+
+## All Built-in Patterns
+
+| Pattern | Trigger | Default Behavior |
+|---|---|---|
+| `pattern_completed` | A user flow finishes | Asks if the user needs more help; links to CSAT |
+| `pattern_cancel_flow` | User cancels the current flow | Confirms cancellation and stops the flow |
+| `pattern_correction` | User corrects a previously set slot | Updates the slot and confirms the change |
+| `pattern_clarification` | Multiple flows match the user's message | Asks the user to choose between options |
+| `pattern_continue_interrupted` | User switches topics mid-flow | Offers to resume the interrupted flow |
+| `pattern_skip_question` | User tries to skip a `collect` step | Explains that the question is required |
+| `pattern_chitchat` | Small talk or off-topic message | Responds with `utter_cannot_handle` (configurable to LLM-generated response) |
+| `pattern_human_handoff` | User requests a human agent | Informs user that human handoff isn't available (override to enable) |
+| `pattern_search` | User asks a knowledge base question | Triggers enterprise search if configured |
+| `pattern_internal_error` | An internal system error occurs | Apologizes and prompts the user to try again |
+| `pattern_cannot_handle` | No flow or knowledge base can handle the request | Asks the user to rephrase |
+| `pattern_customer_satisfaction` | After `pattern_completed` | Asks for a 👍/👎 rating |
+| `pattern_repeat_bot_messages` | User asks the assistant to repeat | Resends the last bot messages |
+| `pattern_session_start` | Session begins | Runs `action_session_start` |
+| `pattern_restart` | User asks to restart | Runs `action_restart` |
+| `pattern_user_silence` | No user input detected (voice) | Prompts "Are you still there?" then hangs up |
+
+## Customizing Patterns
+
+Because patterns are regular flows, you can override any of them by creating a flow with the same name in your project. For example, to change what your assistant says when a flow completes:
+
+```yaml flows.yml
+flows:
+  pattern_completed:
+    description: Completion of a user's flow
+    steps:
+      - action: utter_can_do_something_else
+```
+
+```yaml domain.yml
+responses:
+  utter_can_do_something_else:
+    - text: "Is there anything else I can help you with today?"
+```
+
+### Implementing Human Handoff
+
+To connect users to a real agent instead of showing the default "unavailable" message, override `pattern_human_handoff` with a custom action:
+
+```yaml flows.yml
+flows:
+  pattern_human_handoff:
+    description: Escalates the conversation to a human agent
+    steps:
+      - collect: confirm_human_handoff
+        next:
+          - if: slots.confirm_human_handoff
+            then:
+              - action: action_human_handoff
+                next: END
+          - else:
+            - action: utter_human_handoff_cancelled
+              next: END
+```
+
+### Enabling Free-Form Chitchat
+
+By default, chitchat is disabled and the assistant responds with a generic "I'm not trained to help with that." To enable LLM-generated chitchat responses, override `pattern_chitchat`:
+
+```yaml flows.yml
+flows:
+  pattern_chitchat:
+    description: Handles off-topic interactions without disrupting the main conversation
+    steps:
+      - action: utter_free_chitchat_response
+```
+
+<Warning>
+  Free-form chitchat uses an LLM to generate responses. There is a risk the assistant could answer questions outside your intended domain. Test thoroughly and consider using system prompt guardrails.
+</Warning>
+
+<Tip>
+  Keep the contextual response rephraser enabled for pattern flows. Because patterns often interrupt or repair dynamic conversations, the rephraser helps the assistant's responses sound natural and contextually appropriate rather than robotic.
+</Tip>
+
+## Learn More
+
+- [Patterns reference](/concepts/conversation-patterns) — complete default configuration and all customization options
+- [Customize patterns in Rasa Pro](https://rasa.com/docs/pro/customize/patterns/)
+- [Edit patterns in Rasa Studio](https://rasa.com/docs/studio/build/flow-building/system-flows/)
+- [CALM](/concepts/calm) — how patterns fit into the overall CALM architecture

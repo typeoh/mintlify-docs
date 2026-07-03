@@ -1,0 +1,242 @@
+---
+title: "Slots: How Rasa Stores Conversation Memory and State"
+sidebarTitle: "Slots"
+description: "Slots are Rasa's key-value memory. They store user-provided values, API results, and any state your flows need to collect information and branch correctly."
+---
+
+Slots are your assistant's memory. They act as a key-value store that persists information across turns in a conversation — things the user told you ("I want to send $50"), things your backend returned ("the account has insufficient funds"), and state flags your flows need to make decisions ("the user is logged in"). Every piece of information your flows collect, branch on, or pass to a custom action lives in a slot.
+
+You define slots in the `slots` section of your `domain.yml` file, each with a name, a type, and optionally a default value and mapping rules.
+
+## Slot Types
+
+Different slot types restrict what values a slot can hold. Choose the type that best matches the data you are collecting.
+
+<Tabs>
+  <Tab title="text">
+    A `text` slot accepts any string value. Use it for names, addresses, free-form input, or any value that doesn't fit a more specific type.
+
+    ```yaml domain.yml
+    slots:
+      cuisine:
+        type: text
+    ```
+  </Tab>
+  <Tab title="bool">
+    A `bool` slot accepts only `true` or `false`. Use it for yes/no confirmations, flags, and binary state.
+
+    ```yaml domain.yml
+    slots:
+      confirmed:
+        type: bool
+    ```
+  </Tab>
+  <Tab title="float">
+    A `float` slot accepts decimal numbers. Use it for amounts, quantities, ratings, and any numeric value.
+
+    ```yaml domain.yml
+    slots:
+      transfer_amount:
+        type: float
+    ```
+  </Tab>
+  <Tab title="categorical">
+    A `categorical` slot accepts only values from a predefined list. Rasa normalizes casing automatically — if the user types `LOW` for a slot with value `low`, it is stored as `low`.
+
+    ```yaml domain.yml
+    slots:
+      risk_level:
+        type: categorical
+        values:
+          - low
+          - medium
+          - high
+    ```
+  </Tab>
+  <Tab title="any">
+    An `any` slot accepts any value, including structured data like dictionaries or lists. Use it sparingly — prefer a specific type when possible.
+
+    ```yaml domain.yml
+    slots:
+      order_details:
+        type: any
+    ```
+  </Tab>
+  <Tab title="list">
+    A `list` slot holds a list of values. In CALM, list slots can only be set from custom actions — not from `collect` or `set_slots` flow steps.
+
+    ```yaml domain.yml
+    slots:
+      selected_items:
+        type: list
+    ```
+  </Tab>
+</Tabs>
+
+## Slot Mappings
+
+Slot mappings tell Rasa where the value for a slot comes from. In CALM, you have three main options.
+
+### `from_llm` (default)
+
+The `from_llm` mapping is the default in CALM. If you don't specify a mapping, Rasa assumes `from_llm`. The LLM command generator fills the slot based on what the user says — at any point in the conversation, not just at the `collect` step for that slot.
+
+```yaml domain.yml
+slots:
+  user_name:
+    type: text
+    mappings:
+      - type: from_llm
+```
+
+### `from_entity` (NLU-based)
+
+The `from_entity` mapping fills a slot using an entity extracted by your NLU pipeline. Use this in the hybrid approach when you have a reliable entity extractor for a specific value type.
+
+```yaml domain.yml
+entities:
+  - person
+
+slots:
+  first_name:
+    type: text
+    mappings:
+      - type: from_entity
+        entity: person
+        conditions:
+          - active_flow: greet_user
+```
+
+<Note>
+  Use `conditions` with `active_flow` when the same entity type maps to different slots in different flows. This prevents one flow from accidentally filling another flow's slots.
+</Note>
+
+### `controlled`
+
+The `controlled` mapping (introduced in Rasa Pro 3.12) marks a slot that should only be set by a custom action, a response button payload, or a `set_slots` flow step. The LLM and NLU components will not fill it.
+
+```yaml domain.yml
+slots:
+  is_logged_in:
+    type: bool
+    mappings:
+      - type: controlled
+```
+
+Use `controlled` for state flags and internal context that only your code should set — not user input.
+
+## Initial Slot Values
+
+You can provide an initial value for any slot. This is especially useful for optional `collect` steps — if the slot already has a value, the assistant skips asking for it:
+
+```yaml domain.yml
+slots:
+  dress_color:
+    type: text
+    initial_value: "unspecified"
+
+  num_fallbacks:
+    type: float
+    initial_value: 0
+```
+
+## Resetting Slots in Flows
+
+To reset a slot's value to `null` within a flow, use the `set_slots` step:
+
+```yaml flows.yml
+steps:
+  - set_slots:
+      - amount: null
+```
+
+To reset a slot in a custom action, return a `SlotSet` event with `None` as the value:
+
+```python actions.py
+from rasa_sdk.events import SlotSet
+
+return [SlotSet("amount", None)]
+```
+
+<Warning>
+  Slots that are empty (null) cannot be corrected by the `pattern_correction` conversation repair pattern. If you reset a slot mid-flow, the user will not be able to update it via a correction — they will need to re-enter the value through the normal collect step.
+</Warning>
+
+## Real-Time Slot Validation
+
+<Note>
+  Real-time slot validation is available in Rasa Pro 3.12 and later.
+</Note>
+
+You can define validation rules directly in the domain file that apply every time a slot is filled — regardless of which flow is collecting it. These rules enforce data integrity constraints like format, range, or length.
+
+```yaml domain.yml
+slots:
+  phone_number:
+    type: text
+    mappings:
+      - type: from_llm
+    validation:
+      rejections:
+        - if: not (slots.phone_number matches "^\([0-9]{3}\) [0-9]{3}-[0-9]{4}$")
+          utter: utter_invalid_phone_number
+      refill_utter: "utter_refill_phone_number"  # defaults to utter_ask_phone_number
+```
+
+When a slot value fails validation, Rasa sends the `utter` response and asks the user to provide the value again using the `refill_utter` response. The conversation does not proceed until the user provides a valid value.
+
+### Supported Validation Checks
+
+You can use [pypred](https://github.com/armon/pypred) expressions to define any of these constraints:
+
+<CardGroup cols={2}>
+  <Card title="Regex Matching" icon="magnifying-glass">
+    Validate formats like email addresses, phone numbers, zip codes, or registration numbers.
+  </Card>
+  <Card title="Length Validation" icon="ruler">
+    Ensure usernames, passwords, or IDs meet minimum and maximum length requirements.
+  </Card>
+  <Card title="Range Checks" icon="chart-bar">
+    For numeric inputs, verify values fall within an expected range — for example, age 18–65 or quantity 1–100.
+  </Card>
+  <Card title="Date Format Validation" icon="calendar">
+    Validate date inputs against specific formats and logical constraints.
+  </Card>
+  <Card title="Enumeration Matching" icon="list">
+    Check if an input matches one of a predefined set of valid options.
+  </Card>
+  <Card title="Type Validation" icon="code">
+    Ensure inputs are integers, numeric values, or alphanumeric strings.
+  </Card>
+</CardGroup>
+
+<Tip>
+  Use real-time validation for technical constraints on data format (phone numbers, dates, codes). Use flow-level validation in custom actions for business logic constraints that depend on your backend state.
+</Tip>
+
+## Persisting Slots After a Flow Ends
+
+By default, slots collected in a flow are cleared when the flow ends. Add the slot name to the flow's `persisted_slots` property to retain its value:
+
+```yaml flows.yml
+flows:
+  transfer_money:
+    description: Sends money to a friend or family member
+    persisted_slots:
+      - recipient
+      - amount
+    steps:
+      - collect: recipient
+      - collect: amount
+      - action: action_execute_transfer
+```
+
+<Warning>
+  You cannot use `persisted_slots` and the `reset_after_flow_ends: false` property on a `collect` step in the same flow. Use one or the other.
+</Warning>
+
+## Learn More
+
+- [Flow Steps](/build/flow-steps) — how `collect` and `set_slots` steps work
+- [Actions](/concepts/actions) — setting slots from custom action code
+- [Flows](/concepts/flows) — how slots fit into overall flow design

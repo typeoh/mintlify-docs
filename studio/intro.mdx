@@ -1,0 +1,75 @@
+---
+title: "Rasa Studio: Build Conversational AI Without Code"
+sidebarTitle: "Introduction"
+description: "Rasa Studio is a visual, no-code interface for building, testing, and refining Rasa assistants—designed for both business users and technical teams."
+---
+
+Rasa Studio is a no-code tool that lets you create, refine, and test Rasa assistants visually. Anyone on your team can build assistants, review conversational content, and run tests—all in one place—making collaboration straightforward regardless of technical background.
+
+## Who is Studio for?
+
+Studio works for anyone who prefers a visual approach to building an AI assistant. Think of it as an advanced content management system for conversational AI, one that lets you collaborate on the same assistant as your development team without getting in each other's way.
+
+<CardGroup cols={2}>
+  <Card title="Business Users and Designers" icon="paintbrush">
+    Bring your conversational ideas to life by visually crafting business logic, testing changes, and fine-tuning responses—without needing deep technical expertise. Focus on creating great experiences rather than implementation details.
+  </Card>
+  <Card title="Technical Teams" icon="code">
+    Add a visual layer to your Rasa project, simplifying collaboration and speeding up the feedback loop. Export assistants as code or import compatible projects and keep full control over integration, customization, and deployment.
+  </Card>
+</CardGroup>
+
+## Core Capabilities
+
+Studio covers the full assistant development lifecycle from a single, unified interface.
+
+<CardGroup cols={3}>
+  <Card title="Flow Builder" icon="diagram-project" href="./flow-builder">
+    Design conversation logic with a visual, node-based editor. Add steps for collecting information, sending messages, branching on conditions, and calling external actions.
+  </Card>
+  <Card title="Content Management" icon="folder-open" href="./content-management">
+    Manage all responses, slots, and NLU data from a central CMS. Add translations, create conditional response variations, and keep content organized across your whole assistant.
+  </Card>
+  <Card title="Custom Actions" icon="bolt" href="./custom-actions">
+    Connect your assistant to external APIs and databases using custom Python actions. Declare actions in Studio and link them to a running action server.
+  </Card>
+  <Card title="Train & Test" icon="flask" href="./training-testing">
+    Train your assistant directly in the Studio UI, validate flows before training starts, and test live conversations with Inspector Mode to debug slot values and flow paths.
+  </Card>
+  <Card title="Analytics" icon="chart-line" href="./analytics">
+    Monitor conversation volume, containment rates, response latency, and customer satisfaction scores from the built-in analytics dashboard.
+  </Card>
+  <Card title="Conversation Review" icon="messages" href="./conversation-review">
+    Browse production chat logs, tag conversations, filter by flow or intent, and identify where your assistant needs improvement.
+  </Card>
+</CardGroup>
+
+## How Studio Relates to Rasa Pro
+
+Studio runs on top of Rasa Pro—the enterprise Rasa framework. Every assistant you build in Studio is backed by the same CALM (Conversational AI with Language Models) engine that powers production Rasa deployments.
+
+At any point you can export your assistant's YAML files using the Rasa CLI and continue working locally:
+
+```bash
+rasa studio download <assistant-name>
+```
+
+This gives you full access to the underlying `config.yml`, `domain.yml`, and flow YAML files, so you can apply advanced configurations—such as custom NLU pipelines, IVR channels, end-to-end tests, or secret management—that are not yet available through the Studio UI.
+
+<Note>
+  Studio is a self-hosted product. You deploy it in your own environment using Docker Compose or Helm. See the [Installation guide](./installation) to get started.
+</Note>
+
+## Get Started
+
+<CardGroup cols={3}>
+  <Card title="Tutorial" icon="graduation-cap" href="./tutorial">
+    Build a complete money transfer assistant from scratch in a step-by-step walkthrough.
+  </Card>
+  <Card title="Flow Builder" icon="diagram-project" href="./flow-builder">
+    Learn how to design conversation logic using the visual flow editor.
+  </Card>
+  <Card title="Train & Test" icon="flask" href="./training-testing">
+    Train your assistant and test it interactively inside Studio.
+  </Card>
+</CardGroup>

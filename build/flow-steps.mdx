@@ -1,0 +1,356 @@
+---
+title: "Flow Step Types: Collect, Action, Set Slots, and More"
+sidebarTitle: "Flow Steps"
+description: "A reference guide to every flow step type in Rasa CALM, with YAML examples for collect, action, set_slots, call, link, and autonomous steps."
+---
+
+Every flow in Rasa is made up of one or more **steps**, and each step has a specific type that determines what the assistant does at that point. Steps fall into two categories: **prescriptive steps** for well-defined, deterministic business logic, and **autonomous steps** for dynamic, AI-driven decision-making. You can freely mix both types within a single flow.
+
+All steps share two optional properties that let you label steps and control the execution order:
+
+```yaml
+- id: "my_step_label"        # optional: label this step for use as a branch target
+  next: "another_step_id"    # optional: jump to a specific step instead of the next one
+```
+
+If you omit `next`, the assistant moves to the next step in the list.
+
+## Prescriptive Steps
+
+<Accordion title="collect — Gather user input into a slot">
+  Use `collect` to ask the user for information and store it in a named slot. The assistant will not advance to the next step until the slot is filled.
+
+  ```yaml flows.yml
+  flows:
+    open_account:
+      description: Help the user open a new bank account.
+      steps:
+        - collect: account_type
+          description: "Account type is one of checking, savings, money market, or IRA."
+  ```
+
+  ### Slot description
+
+  The optional `description` field guides the LLM when extracting the slot value from the user's message. Use it to specify valid values or formats.
+
+  ```yaml
+  - collect: zip_code
+    description: |
+      A US postal code, either 5 or 9 digits. For example, "60613" or "60613-1060".
+  ```
+
+  ### ask_before_filling
+
+  By default, a `collect` step is skipped if the slot is already filled. Set `ask_before_filling: true` to always ask, even when the slot has a value — useful for confirmation prompts.
+
+  ```yaml
+  - collect: final_confirmation
+    ask_before_filling: true
+  ```
+
+  ### force_slot_filling
+
+  Set `force_slot_filling: true` to prevent the assistant from processing any other commands while this slot is being collected. This is especially useful for free-text fields like feedback where the user's message might inadvertently trigger other flows.
+
+  ```yaml
+  - collect: feedback
+    force_slot_filling: true
+  ```
+
+  ### Slot validation with rejections
+
+  Add a `rejections` list to validate the collected value inline. Each rejection specifies an `if` condition (evaluated with pypred) and the `utter` response to send when the condition is true. The assistant re-asks until the value passes all rejections.
+
+  ```yaml flows.yml
+  flows:
+    verify_eligibility:
+      description: Verify if the user is old enough to open an account.
+      steps:
+        - collect: age
+          rejections:
+            - if: slots.age < 1
+              utter: utter_invalid_age
+            - if: slots.age < 18
+              utter: utter_age_at_least_18
+  ```
+
+  ### Custom ask action
+
+  Instead of a templated response, Rasa will look for an action named `action_ask_<slot_name>` if you want to build dynamic prompts (for example, showing buttons loaded from an API). Add the action to your domain:
+
+  ```yaml domain.yml
+  actions:
+    - action_ask_account_type
+  ```
+
+  The `collect` step itself stays the same — Rasa resolves the ask action automatically.
+
+  ### Using a different response key
+
+  You can override which response Rasa uses for the prompt by adding an `utter` property:
+
+  ```yaml flows.yml
+  flows:
+    replace_card:
+      description: Replace a supplementary card for a family member.
+      steps:
+        - collect: account_type
+          utter: utter_ask_secondary_account_type
+  ```
+
+  ### Resetting slots after flow ends
+
+  By default, slots filled via `collect` are reset when the flow ends. To keep a slot's value, add it to the flow-level `persisted_slots` list instead:
+
+  ```yaml flows.yml
+  flows:
+    transfer_money:
+      description: Send money to another person.
+      persisted_slots:
+        - recipient
+      steps:
+        - collect: recipient
+        - collect: amount
+  ```
+</Accordion>
+
+<Accordion title="action — Run a response or custom action">
+  Use `action` to execute a response defined in your domain or a custom action. The assistant runs the action and immediately moves to the next step without waiting for user input.
+
+  ```yaml
+  # Run a response
+  - action: utter_insufficient_funds
+
+  # Run a custom action
+  - action: action_check_sufficient_funds
+  ```
+
+  A full example with branching after a custom action:
+
+  ```yaml flows.yml
+  flows:
+    transfer_money:
+      description: Send money to a friend or family member.
+      steps:
+        - collect: recipient
+        - collect: amount
+        - action: action_check_sufficient_funds
+          next:
+            - if: not slots.has_sufficient_funds
+              then:
+                - action: utter_insufficient_funds
+                  next: END
+            - else: confirm_step
+        - id: confirm_step
+          collect: transfer_confirmed
+          ask_before_filling: true
+  ```
+</Accordion>
+
+<Accordion title="set_slots — Set slot values directly">
+  Use `set_slots` to assign values to one or more slots without asking the user. This is most useful for resetting a slot so the assistant can re-collect it.
+
+  ```yaml
+  - set_slots:
+      - amount: null
+      - account_type: "savings"
+  ```
+
+  Example — reset the `amount` slot and loop back to re-ask:
+
+  ```yaml flows.yml
+  flows:
+    transfer_money:
+      description: Send money to a friend or family member.
+      steps:
+        - collect: recipient
+        - id: ask_amount
+          collect: amount
+          description: "The number of US dollars to send"
+        - action: action_check_sufficient_funds
+          next:
+            - if: not slots.has_sufficient_funds
+              then:
+                - action: utter_insufficient_funds
+                - set_slots:
+                    - amount: null
+                  next: ask_amount
+            - else: final_confirmation
+        - id: final_confirmation
+          collect: transfer_confirmed
+          ask_before_filling: true
+  ```
+</Accordion>
+
+<Accordion title="call — Embed another flow (returns to parent)">
+  Use `call` to embed a child flow inside a parent flow. When execution reaches the `call` step, Rasa starts the child flow. Once the child flow completes, execution returns to the parent flow and continues with the next step.
+
+  ```yaml flows.yml
+  flows:
+    transfer_money:
+      description: Send money to a friend or family member.
+      steps:
+        - call: authenticate_user
+        - collect: recipient
+        - collect: amount
+        - action: action_execute_transfer
+
+    authenticate_user:
+      description: Verify the user's identity before sensitive operations.
+      if: False   # flow guard: only callable, never triggered directly
+      steps:
+        - collect: pin
+          description: "The user's 4-digit PIN"
+        - action: action_verify_pin
+  ```
+
+  <Note>
+    A child flow cannot use a `link` step. If you need to guard a child flow from direct user triggering, set `if: False` on the child flow.
+  </Note>
+
+  ### Calling an MCP tool
+
+  You can also use `call` to invoke a tool from a configured MCP server directly, without writing a custom action:
+
+  ```yaml
+  - call: book_flight
+    mcp_server: travel_service
+    mapping:
+      input:
+        - param: flight_id
+          slot: flight_number
+        - param: num_passengers
+          slot: passenger_count
+      output:
+        - slot: booking_status
+          value: result.structuredContent.booking_status.success
+        - slot: booking_reference
+          value: result.structuredContent.booking_status.reference_number
+  ```
+</Accordion>
+
+<Accordion title="link — Redirect to another flow (doesn't return)">
+  Use `link` as the last step in a flow to end the current flow and immediately start another one. Unlike `call`, the parent flow does not resume after the linked flow completes.
+
+  ```yaml flows.yml
+  flows:
+    transfer_money:
+      description: Send money to a friend or family member.
+      steps:
+        - collect: recipient
+        - collect: amount
+        - action: action_execute_transfer
+        - action: utter_transfer_complete
+        - link: collect_feedback   # flow ends here; collect_feedback starts
+
+    collect_feedback:
+      description: Collect a satisfaction rating after completing a task.
+      steps:
+        - collect: satisfaction_rating
+        - action: utter_thank_you
+  ```
+
+  <Warning>
+    `link` can only appear as the last step in a flow. Adding any other property alongside `link` causes a validation error.
+  </Warning>
+</Accordion>
+
+<Accordion title="noop — Branch without taking an action">
+  Use `noop: true` combined with `next` conditions to create a conditional branch point in a flow without executing any action, response, or slot collection at that step.
+
+  ```yaml flows.yml
+  flows:
+    change_address:
+      description: Allow the user to update their mailing address.
+      steps:
+        - noop: true
+          next:
+            - if: not slots.authenticated
+              then:
+                - call: authenticate_user
+                  next: ask_new_address
+            - else: ask_new_address
+        - id: ask_new_address
+          collect: new_address
+  ```
+
+  <Note>
+    A `noop` step must always have a `next` property. Without it, flow validation fails during training.
+  </Note>
+</Accordion>
+
+<Accordion title="id and next — Labels and branching targets">
+  Every step can carry an optional `id` that makes it addressable from the `next` field of another step. Use `id` labels whenever you need non-linear jumps — for example, to loop back to a previous step after an error.
+
+  ```yaml
+  - id: ask_amount
+    collect: amount
+  - action: action_check_balance
+    next:
+      - if: not slots.has_sufficient_funds
+        then:
+          - action: utter_insufficient_funds
+          - set_slots:
+              - amount: null
+            next: ask_amount    # jump back by id
+      - else: END
+  ```
+
+  You can also inline sub-steps directly under `next` for nested readability:
+
+  ```yaml
+  - collect: age
+    next:
+      - if: slots.age < 18
+        then:
+          - action: utter_not_old_enough
+            next: END
+      - else: verify_identity_step
+  ```
+</Accordion>
+
+## Autonomous Steps
+
+<Accordion title="call — Invoke a sub-agent (autonomous)">
+  When the name in a `call` step matches a configured sub-agent (rather than a flow name), Rasa delegates control to that agent. The agent runs autonomously — invoking tools, requesting information from the user, and signalling completion when it is done.
+
+  ```yaml flows.yml
+  flows:
+    investment_research:
+      description: Help the user research and compare investment options.
+      steps:
+        - call: research_agent   # autonomous sub-agent configured in sub_agents/
+  ```
+
+  ### Specifying exit conditions
+
+  You can end the sub-agent automatically as soon as specific slot conditions are met, rather than waiting for the agent to signal completion:
+
+  ```yaml flows.yml
+  flows:
+    appointment_booking:
+      description: Help the user book an appointment.
+      steps:
+        - call: booking_agent
+          exit_if:
+            - slots.appointment_time is not null
+        - collect: final_confirmation
+  ```
+
+  The sub-agent automatically receives built-in `set_slot` tools for any slots mentioned in `exit_if`, allowing it to populate them as part of its work.
+</Accordion>
+
+## Shared Step Reference
+
+| Property | Applies to | Description |
+|---|---|---|
+| `id` | All steps | Optional label for targeting this step from `next` |
+| `next` | All steps | Which step to execute next; supports `if`/`then`/`else` conditions |
+| `description` | `collect` | Guides LLM slot extraction; also used for slot validation hints |
+| `ask_before_filling` | `collect` | When `true`, always asks even if the slot is already filled |
+| `force_slot_filling` | `collect` | When `true`, suppresses other commands until slot is filled |
+| `rejections` | `collect` | Inline validation rules with `if` conditions and `utter` responses |
+| `utter` | `collect` | Override the response key used to ask for the slot |
+| `mcp_server` | `call` | Name of an MCP server to invoke a tool from |
+| `mapping` | `call` + MCP | Maps slots to tool inputs and tool outputs back to slots |
+| `exit_if` | `call` (autonomous) | Conditions that end the sub-agent when met |

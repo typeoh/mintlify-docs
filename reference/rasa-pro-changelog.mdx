@@ -1,0 +1,233 @@
+---
+title: "Rasa Pro Release Notes and Changelog"
+sidebarTitle: "Changelog"
+description: "Key features, breaking changes, and improvements across major Rasa Pro releases from 3.8 through 3.16, with links to the full upstream changelog."
+---
+
+Rasa Pro follows [Semantic Versioning](https://semver.org/) from version 3.3 onward. Each release includes Rasa Pro (the assistant runtime) and Rasa Pro Services (the analytics container). This page summarizes the most significant changes in each major release series.
+
+<Note>
+This page covers the highlights. For every patch-level change, bugfix, and security update, see the full changelog at [rasa.com/docs/reference/changelogs/rasa-pro-changelog](https://rasa.com/docs/reference/changelogs/rasa-pro-changelog/).
+</Note>
+
+---
+
+## 3.16.x — Released March 2026
+
+<Warning>
+**Upgrading to 3.16 requires action.** Default LLM models have changed across all built-in components. If you need the previous behavior, pin your model names explicitly in `endpoints.yml`. The `Agent` interface also changed — custom agent implementations must be updated.
+</Warning>
+
+### Breaking Changes
+
+**Default models changed across all LLM components**
+
+| Component | New default model |
+|---|---|
+| `CompactLLMCommandGenerator` | `gpt-5.1-2025-11-13` |
+| `SearchReadyLLMCommandGenerator` | `gpt-5.1-2025-11-13` |
+| `LLMBasedCommandGenerator` | `gpt-5.1-2025-11-13` |
+| `ContextualResponseRephraser` | `gpt-5.1-2025-11-13` |
+| `MCPBaseAgent` | `gpt-5.1-2025-11-13` |
+| `EnterpriseSearchPolicy` | `gpt-5-mini-2025-08-07` |
+| `LLMBasedRouter` | `gpt-5-mini-2025-08-07` |
+| `ConversationRephraser` | `gpt-5-mini-2025-08-07` |
+| `IntentlessPolicy` | `gpt-5-mini-2025-08-07` |
+
+**Agent interface changed**
+
+- `process_output` removed from the shared agent protocol. Use `process_agent_output` for `A2AAgent` implementations and `process_tool_output` for ReAct/MCP agents.
+- `run()` signature now accepts an optional `cancellation_token` parameter.
+- Custom tool callable signature changed from `Callable[[Dict], AgentToolResult]` to `Callable[[Dict, AgentToolContext], AgentToolResult]`.
+
+**Default command generation prompts changed.** Custom `prompt_template` values in `config.yml` are unaffected.
+
+**`HumanHandoff` command removed** from the codebase and all default prompt templates.
+
+### New Features
+
+<CardGroup cols={2}>
+  <Card title="CSAT Pattern" icon="star">
+    Built-in `pattern_customer_satisfaction` collects satisfaction scores after conversations end. Fully customizable.
+  </Card>
+  <Card title="Session Timer System" icon="clock">
+    Automatic session expiration with Redis-backed storage for multi-replica deployments. Conversations are marked inactive after a configurable timeout.
+  </Card>
+  <Card title="A2A Polling Configuration" icon="arrows-rotate">
+    `max_polling_time` and `polling_initial_delay` are now configurable per A2A agent. Graceful cancellation when sessions expire mid-operation.
+  </Card>
+  <Card title="MCP _meta Support" icon="key">
+    Pass user-specific data (auth tokens, user IDs) to MCP servers via `meta_map` in `endpoints.yml` without exposing it to the LLM.
+  </Card>
+  <Card title="Streaming ReAct Agents" icon="bolt">
+    ReAct agents now consume the LLM API stream incrementally, delivering content tokens in real time to reduce perceived latency.
+  </Card>
+  <Card title="GPT-5.1 and GPT-5.2 Support" icon="robot">
+    Prompt templates and model mappings for GPT-5.1 and GPT-5.2. Updated defaults to `gpt-5.1-2025-11-13`.
+  </Card>
+  <Card title="Reasoning Effort Control" icon="brain">
+    New optional `reasoning_effort` parameter for reasoning-capable models (OpenAI, Azure). Rasa applies the lowest appropriate value by default.
+  </Card>
+  <Card title="Multilingual Voice AI" icon="microphone">
+    ASR and TTS configuration switches dynamically based on the `language` slot value during a conversation.
+  </Card>
+</CardGroup>
+
+---
+
+## 3.15.x — Released November 2025
+
+### Highlights
+
+- **Langfuse tracing integration** — All LLM-based components (command generators, rephraser, Enterprise Search, ReAct sub-agents) emit traces automatically when Langfuse is configured in `endpoints.yml`.
+
+  ```yaml
+  tracing:
+    - type: langfuse
+      public_key: ${LANGFUSE_PUBLIC_KEY}
+      private_key: ${LANGFUSE_PRIVATE_KEY}
+      host: https://cloud.langfuse.com
+  ```
+
+- **DTMF input for voice** — Collect steps in flows now support DTMF (Dual-Tone Multi-Frequency) input for IVR-style interactions on supported voice channels.
+
+- **Datetime context in LLM prompts** — The current date and time are automatically injected into LLM prompts, improving responses to time-sensitive questions.
+
+- **E2E test result export** — Use `-o <path>` to save test results and `-f <path>` to export only failed tests for re-running.
+
+- **Python 3.12 and 3.13 support** — Dropped Python 3.9 support; added support for Python 3.12 and 3.13.
+
+---
+
+## 3.14.x — Released October 2025
+
+### Highlights
+
+- **Sub-agent call step** — Call an agent directly from a CALM flow step using `call: <agent_name>`. Supports both open-ended exploratory agents and task-specific agents with `exit_if` conditions.
+
+- **MCP tool call step** — Invoke MCP (Model Context Protocol) tools directly from flow steps for richer integrations.
+
+- **Deepgram TTS** — Added Deepgram Text-to-Speech support in Voice Stream Channels.
+
+- **Redis Cluster support** — The `RedisLockStore` and `RedisTrackerStore` now support Redis Cluster mode for high-availability deployments.
+
+- **Global silence timeout in endpoints.yml** — Configure silence timeout centrally rather than per-channel:
+
+  ```yaml
+  interaction_handling:
+    global_silence_timeout: 7
+  ```
+
+---
+
+## 3.13.x — Released July 2025
+
+### Highlights
+
+- **`SearchReadyLLMCommandGenerator`** — A new command generator optimized for assistants that use `EnterpriseSearchPolicy`. Improves triggering accuracy for knowledge-answer commands and delegates chit-chat handling to Enterprise Search.
+
+- **PII management for CALM** — Comprehensive PII detection and anonymization integrated directly into CALM's conversation processing.
+
+- **Jambonz stream connector** — Added native support for the Jambonz voice platform.
+
+- **`rasa studio link` command** — Link a local project to a specific Studio assistant for seamless `push`/`pull` operations.
+
+- **Silence monitoring enabled by default** — The `monitor_silence` parameter was removed; silence monitoring is now always on and configured via `global_silence_timeout`.
+
+- **`IntentlessPolicy` deprecated** — Scheduled for removal in Rasa 4.0.0.
+
+---
+
+## 3.12.x — Released March 2025
+
+### Highlights
+
+- **`CompactLLMCommandGenerator`** — A streamlined command generator with a compact prompt format, designed for better cost efficiency and speed.
+
+- **Multi-language support** — `additional_languages` key in `config.yml` enables assistants that understand and respond in multiple languages.
+
+- **OAuth for Azure OpenAI (Entra ID)** — Authenticate to Azure-deployed OpenAI models using OAuth/Entra ID instead of API keys.
+
+- **`force_slot_filling` and digression control** — New `ask_confirm_digressions` and `block_digressions` attributes on collect steps and flows let you prevent unwanted digressions.
+
+- **Real-time slot validation** — Slots can now be validated as they are filled, with the ability to reject invalid values and re-prompt the user immediately.
+
+- **E2E assertions GA** — The `RASA_PRO_BETA_E2E_ASSERTIONS` flag is no longer required; assertions in E2E tests are generally available.
+
+- **Dropped Python 3.9** support.
+
+---
+
+## 3.11.x — Released December 2024
+
+### Highlights
+
+- **Twilio Media Streams voice channel** — Full voice streaming support for Twilio, with configurable TTS and STT services.
+
+- **Multi-LLM Routing with `model_groups`** — Define multiple LLM deployments under one `model_group` ID. Rasa routes traffic across them using LiteLLM's routing strategies (e.g., `least-busy`).
+
+- **Cartesia TTS** — Added Cartesia Text-to-Speech support.
+
+- **Deepgram STT and Azure TTS** — Extended Voice Stream Channel support.
+
+- **Amazon Bedrock support** — Connect to Claude, Titan, and other Bedrock-hosted models.
+
+- **Google Gemini support** — Added `provider: gemini` for Google AI Studio models.
+
+- **Multiple Azure subscriptions** — Model groups can now reference deployments across multiple Azure subscriptions.
+
+---
+
+## 3.10.x — Released September 2024
+
+### Highlights
+
+- **LiteLLM integration** — All LLM calls now go through LiteLLM, making every [LiteLLM-supported provider](https://litellm.vercel.app/docs/providers) available to CALM.
+
+- **Fine-tuning recipe (beta)** — `rasa llm finetune prepare-data` generates a fine-tuning dataset from E2E test cases. Enable with `RASA_PRO_BETA_FINETUNING_RECIPE=true`.
+
+- **E2E assertion accuracy metrics** — Measure groundedness and answer relevance of generative responses from Enterprise Search and the Contextual Response Rephraser.
+
+- **Generative response evaluation** — New assertion types for evaluating RAG-generated answers in E2E tests.
+
+---
+
+## 3.9.x — Released 2024
+
+### Highlights
+
+- **`from_llm` slot mapping** — Slots can now be filled directly by the LLM command generator without a custom action.
+
+- **gRPC for custom actions** — The action server now supports gRPC in addition to HTTP for lower-latency action execution.
+
+- **Flow history and replay safety** — Significant improvements to conversation state reconstruction from tracker store events.
+
+---
+
+## 3.8.x — Released 2024
+
+### Highlights
+
+- **Coexistence mode (CALM + NLU)** — Run CALM flows and traditional NLU stories side by side in a single assistant. The `LLMBasedRouter` decides which system handles each message.
+
+- **`call` step** — Flows can call sub-flows using a `call` step, enabling modular conversational design.
+
+- **Rasa Plus merged into Rasa Pro** — The `rasa-plus` package was consolidated into `rasa-pro`. All Rasa Plus features are available in Rasa Pro.
+
+---
+
+## 3.7.x — Released 2023
+
+### Highlights
+
+- **Enterprise Search Policy** — RAG (Retrieval-Augmented Generation) policy that answers user questions from a vector store using LLMs.
+
+- **`rasa studio download` command** — Download a complete assistant from Rasa Studio to your local environment.
+
+- **Rasa Studio 1.x compatibility** — Initial support for connecting Rasa Pro projects to Rasa Studio.
+
+---
+
+<Note>
+For patch-level release notes, security updates, and the complete list of bugfixes across all versions, visit the official changelog at [rasa.com/docs/reference/changelogs/rasa-pro-changelog](https://rasa.com/docs/reference/changelogs/rasa-pro-changelog/).
+</Note>

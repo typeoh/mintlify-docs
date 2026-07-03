@@ -1,0 +1,286 @@
+---
+title: "Install Rasa Pro: Python, Docker, and Cloud Setup"
+sidebarTitle: "Installation"
+description: "Install Rasa Pro via Python with uv or pip, pull the Docker image, configure optional dependency extras, and verify your setup is working correctly."
+---
+
+Rasa Pro is available as a Python package (`rasa-pro`) and as a Docker image on Docker Hub. Both approaches give you the full Rasa Pro feature set — choose whichever fits your workflow best. This page covers system requirements, installation steps, optional dependency extras, and troubleshooting tips.
+
+## System requirements
+
+Before installing, confirm your environment meets these requirements:
+
+| Requirement | Supported versions |
+|-------------|-------------------|
+| Python | 3.10, 3.11, 3.12, 3.13 |
+| Operating system | macOS, Linux, Windows |
+| License key | Required — [get your free Developer Edition key](https://rasa.com/rasa-pro-developer-edition-license-key-request/) |
+| LLM provider API key | Required for your own projects (not needed for the tutorial template) |
+
+<Tip>
+  Python 3.11 is the recommended version for the smoothest installation experience. While 3.10, 3.12, and 3.13 are supported, 3.11 has the broadest compatibility with Rasa's dependency tree.
+</Tip>
+
+## Installation
+
+<Tabs>
+  <Tab title="Python (uv)">
+    [uv](https://docs.astral.sh/uv/getting-started/installation/) is the recommended package manager for Rasa. It resolves and installs dependencies significantly faster than pip and handles Python version management automatically.
+
+    **1. Install uv**
+
+    <Tabs>
+      <Tab title="macOS / Linux">
+        ```bash
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        ```
+      </Tab>
+      <Tab title="Windows (PowerShell)">
+        ```powershell
+        powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+        ```
+      </Tab>
+    </Tabs>
+
+    **2. Create a project directory and virtual environment**
+
+    Each Rasa project should live in its own directory with its own virtual environment:
+
+    ```bash
+    mkdir my-rasa-assistant && cd my-rasa-assistant
+    uv venv --python 3.11
+    ```
+
+    uv will automatically download Python 3.11 if it is not already installed on your system.
+
+    **3. Activate the virtual environment**
+
+    <Tabs>
+      <Tab title="macOS / Linux">
+        ```bash
+        source .venv/bin/activate
+        ```
+      </Tab>
+      <Tab title="Windows">
+        ```powershell
+        .venv\Scripts\activate
+        ```
+      </Tab>
+    </Tabs>
+
+    You must activate the virtual environment each time you open a new terminal session to work on this project.
+
+    **4. Install Rasa Pro**
+
+    ```bash
+    uv pip install rasa-pro
+    ```
+
+    **5. Verify the installation**
+
+    ```bash
+    rasa --version
+    ```
+
+    You should see the Rasa version number printed to your terminal. If the command is not found, ensure the virtual environment is activated.
+  </Tab>
+
+  <Tab title="Python (pip)">
+    You can use standard `pip` if you prefer, though it will take longer to resolve and install dependencies than `uv`.
+
+    **1. Create and activate a virtual environment**
+
+    ```bash
+    python3.11 -m venv .venv
+    source .venv/bin/activate   # macOS / Linux
+    # .venv\Scripts\activate    # Windows
+    ```
+
+    **2. Install Rasa Pro**
+
+    ```bash
+    pip install rasa-pro
+    ```
+
+    **3. Verify the installation**
+
+    ```bash
+    rasa --version
+    ```
+  </Tab>
+
+  <Tab title="Docker">
+    The official Rasa Pro Docker image is published on Docker Hub as `rasa/rasa-pro`. Replace `RASAVERSION` in the commands below with your desired version. See the [Changelog](https://rasa.com/docs/reference/changelogs/rasa-pro-changelog/) for the latest version number.
+
+    **Pull the image**
+
+    ```bash
+    docker pull rasa/rasa-pro:RASAVERSION
+    ```
+
+    **Run a command**
+
+    Pass your license key via the `-e` flag so it is available inside the container:
+
+    ```bash
+    docker run -v ./:/app \
+               -e RASA_LICENSE=${RASA_LICENSE} \
+               -p 5005:5005 \
+               rasa/rasa-pro:RASAVERSION \
+               run
+    ```
+
+    **Initialize a new project via Docker**
+
+    ```bash
+    docker run -v ./:/app \
+               -e RASA_LICENSE=${RASA_LICENSE} \
+               rasa/rasa-pro:RASAVERSION \
+               init --no-prompt --template tutorial
+    ```
+
+    <Note>
+      The default Docker image already includes the `nlu` and `channels` dependency extras. If you need the `full` set of optional dependencies, extend the base image with a custom Dockerfile (see below).
+    </Note>
+  </Tab>
+</Tabs>
+
+## Optional dependency extras
+
+Rasa Pro supports optional dependencies grouped into "extras" that you install on top of the base package:
+
+| Extra | What it includes |
+|-------|-----------------|
+| `nlu` | Dependencies for NLU pipeline components |
+| `channels` | Dependencies for channel connectors (Slack, Telegram, etc.) |
+| `full` | All optional dependencies combined |
+
+**Installing extras with pip or uv:**
+
+```bash
+# Install Rasa Pro with NLU dependencies
+uv pip install "rasa-pro[nlu]"
+
+# Install with all channel connectors
+uv pip install "rasa-pro[channels]"
+
+# Install everything
+uv pip install "rasa-pro[full]"
+```
+
+**Extending the Docker image with extras:**
+
+```dockerfile
+# Extend the official Rasa Pro image
+FROM rasa/rasa-pro:RASAVERSION
+
+# Install all optional dependencies
+RUN pip install rasa[full]
+```
+
+```bash
+# Build your custom image
+docker build -t my-custom-rasa:latest .
+
+# Run it
+docker run -v ./:/app \
+           -e RASA_LICENSE=${RASA_LICENSE} \
+           -p 5005:5005 \
+           my-custom-rasa:latest \
+           run
+```
+
+## Set your license
+
+After installation, export your license key as an environment variable before running any `rasa` commands:
+
+```bash
+export RASA_LICENSE=YOUR_LICENSE_KEY
+```
+
+See the [Licensing page](/get-started/licensing) for instructions on setting the variable persistently across shell sessions, using Windows PowerShell, and configuring it in Docker or CI/CD pipelines.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="tokenizers or cryptography install fails on Linux (Python 3.10)">
+    This error occurs because `tokenizers` requires a Rust compiler that is not present by default. Install Rust and then retry:
+
+    ```bash
+    apt install rustc && apt install cargo
+    ```
+
+    After installation, restart your terminal and verify Rust is available:
+
+    ```bash
+    rustc --version
+    ```
+
+    If the `rustc` command is not found after restarting, add Cargo to your `PATH` manually:
+
+    ```bash
+    export PATH="$HOME/.cargo/bin:$PATH"
+    ```
+  </Accordion>
+
+  <Accordion title="tokenizers install fails on macOS">
+    macOS also requires a Rust compiler for `tokenizers`. Install it using `rustup`:
+
+    ```bash
+    brew install rustup
+    rustup-init
+    ```
+
+    Restart your terminal and verify:
+
+    ```bash
+    rustc --version
+    ```
+
+    If needed, add Cargo to your `PATH`:
+
+    ```bash
+    export PATH="$HOME/.cargo/bin:$PATH"
+    ```
+  </Accordion>
+
+  <Accordion title="OSError: [Errno 40] Message too long when using Jaeger tracing">
+    This error appears when you run `rasa train` or `rasa run` with Jaeger tracing enabled. The underlying cause is your operating system restricting UDP packet size.
+
+    Check the current limit on macOS:
+
+    ```bash
+    sysctl net.inet.udp.maxdgram
+    ```
+
+    Increase the limit:
+
+    ```bash
+    sudo sysctl -w net.inet.udp.maxdgram=65535
+    ```
+  </Accordion>
+
+  <Accordion title="rasa: command not found after installation">
+    This usually means the virtual environment is not activated. Run the activation command for your shell:
+
+    ```bash
+    source .venv/bin/activate   # macOS / Linux
+    .venv\Scripts\activate       # Windows
+    ```
+
+    Then retry `rasa --version`. If the command is still not found, confirm the installation succeeded with `uv pip list | grep rasa`.
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+With Rasa installed and your license configured, you are ready to build:
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/get-started/quickstart">
+    Follow the step-by-step guide to initialize a project, connect MCP tools, and run your first agent.
+  </Card>
+  <Card title="Licensing" icon="key" href="/get-started/licensing">
+    Learn how to set your license persistently and understand Developer Edition limits.
+  </Card>
+</CardGroup>

@@ -1,0 +1,102 @@
+---
+title: "Studio Analytics: Monitor Assistant Performance and CSAT"
+sidebarTitle: "Analytics"
+description: "Track conversation volume, containment, latency, and CSAT from Rasa Studio's built-in analytics dashboard with filters by version, channel, and time."
+---
+
+Rasa Studio ships with a built-in Analytics dashboard that gives you a clear view of how your assistant performs over time. It helps you answer questions like: Are users getting the help they need? Is the assistant slower after a recent release? Which flows are causing the most handoffs? You get these answers without leaving Studio and without building a custom reporting pipeline.
+
+## The Four Key Metrics
+
+The top of the Analytics dashboard shows four headline metrics. Each metric has a detailed chart and insights section further down the page.
+
+<CardGroup cols={2}>
+  <Card title="Conversation Volume" icon="chart-bar">
+    The total number of conversation sessions within the selected time period. Each session is evaluated against your configurable success criteria and displayed as either successful or unsuccessful.
+  </Card>
+  <Card title="Containment" icon="shield-check">
+    The percentage of conversations handled end-to-end by the assistant without escalating to a human agent. Requires `action_human_handoff` to be configured so Rasa can detect escalations.
+  </Card>
+  <Card title="Latency" icon="gauge">
+    The time from when the user's message is received to when the assistant's reply is sent back. Displayed as p50, p95, and p99 percentile trend lines so you can distinguish general slowdowns from tail latency issues.
+  </Card>
+  <Card title="CSAT" icon="star">
+    Customer Satisfaction score. Collected automatically via the `pattern_customer_satisfaction` system flow after a conversation completes. Users rate their experience on a 1–5 scale.
+  </Card>
+</CardGroup>
+
+## Conversation Volume
+
+The Conversation Volume chart displays all sessions in your selected time period, split into successful and unsuccessful categories. This gives you an immediate sense of how well your assistant handles requests at scale.
+
+### Defining Success Criteria
+
+What counts as a "successful" conversation is entirely configurable. To set up your criteria:
+
+1. Click the **⚙️ settings icon** on the Conversation Volume chart.
+2. Add filters to describe what success looks like for your team. For example: the user completed a specific flow, or no human handoff occurred.
+3. Save. Any conversation that doesn't meet the criteria is automatically categorized as unsuccessful.
+
+<Note>
+  By default, any session resolved without reaching a human agent counts as successful.
+
+  Success criteria are recalculated nightly. Changes you make today appear in metrics the following day. If you update criteria multiple times in one day, only the last change is applied.
+
+  When your success definition changes, a vertical line appears on the chart marking the date so you can distinguish genuine performance improvements from metric changes caused by a new definition.
+</Note>
+
+### Drilling into Conversations from the Chart
+
+Click any bar in the Conversation Volume chart to open a filtered view of the individual conversations that make up that data point. From there you can:
+
+- Review successful conversations to understand what's working.
+- Investigate unsuccessful conversations to find where users drop off or get stuck.
+- Spot patterns for a specific day without manually configuring filters in Conversation Review.
+
+## Containment Insights
+
+The Containment Insights section surfaces a ranked list of flows with the lowest containment rates—the flows most often resulting in a handoff to a human agent. Instead of guessing where your assistant struggles, you get a clear priority list of what to improve first.
+
+Each row represents a single flow. A low containment rate signals that the flow may need better logic, more complete responses, or additional knowledge to handle the scenarios users bring to it.
+
+## Latency Insights
+
+Latency Insights breaks down response times over the selected period into three percentile trend lines:
+
+| Percentile | What it tells you |
+|---|---|
+| **p50** | The median response time—what a typical user experiences |
+| **p95** | Response time for the slowest 5% of messages |
+| **p99** | Response time for the slowest 1% of messages—tail latency |
+
+Use these trend lines to detect degradation before it impacts user experience. A rising p99 while p50 stays flat suggests a tail latency issue affecting a subset of conversations, not a general slowdown.
+
+## CSAT: Customer Satisfaction
+
+CSAT collection is handled automatically by Studio's `pattern_customer_satisfaction` system flow. After `pattern_completed` fires (when the user indicates they're done), the assistant prompts them to rate their experience.
+
+Responses are grouped into three categories:
+
+| Category | Rating range |
+|---|---|
+| **Satisfied** | 3–5 out of 5 |
+| **Dissatisfied** | 1–2 out of 5 |
+| **No response** | User didn't provide a rating |
+
+The CSAT metric displayed in the dashboard is the percentage of rated conversations that received a satisfied score.
+
+## Filters
+
+All four metrics on the Analytics dashboard respond to the same set of filters. Apply them to compare performance across versions, isolate channel-specific issues, or zoom into a specific time window.
+
+| Filter | Description |
+|---|---|
+| **Time period** | Choose a preset range or define a custom date range |
+| **Assistant Version** | Compare metrics across different trained model versions to measure the impact of your changes |
+| **Channel** | Isolate metrics for a specific channel, such as web chat or IVR |
+
+## Direct Database Access
+
+If you need custom dashboards or want to combine Studio analytics with data from other systems, you can connect directly to the Analytics database. This lets you query raw event data and pipe it into tools like Metabase, Tableau, or a data warehouse.
+
+See the [Studio Analytics Database Documentation](https://rasa.com/docs/reference/integrations/analytics-database/) for schema details, connection instructions, and example queries.

@@ -1,0 +1,195 @@
+---
+title: "Integrating External Agents and Sub-Agents with Rasa"
+sidebarTitle: "External Agents"
+description: "Learn how to connect external AI agents to Rasa using the A2A protocol, invoke them from flows, and control context sharing with custom agent modules."
+---
+
+Rasa can act as an intelligent **orchestrator** that coordinates a network of specialised agents. When your assistant needs to delegate a task to an external system — a third-party AI, a legacy service built on another stack, or a specialised agent owned by another team — you can integrate it using the **Agent-to-Agent (A2A) protocol**. Your Rasa assistant owns the conversation, decides when to hand off to an external agent, and resumes control when the agent is done.
+
+<Note>
+  External agent integration via the A2A protocol is a **beta** feature introduced in Rasa 3.14. The API may change in future releases. Rasa welcomes your feedback.
+</Note>
+
+## The Orchestrator Model
+
+In this architecture, your Rasa assistant is the orchestrator. It:
+
+1. **Owns the conversation flow** — decides when and which external agents to involve.
+2. **Manages business logic** — enforces rules, compliance, and conversation patterns.
+3. **Controls agent handoffs** — delegates specific tasks and reclaims control afterwards.
+4. **Maintains conversation context** — preserves user state across agent interactions.
+5. **Controls context engineering** — determines exactly which data to share with each agent.
+6. **Handles final responses** — ensures a consistent user experience regardless of which agent handled a task.
+
+## The A2A Protocol
+
+The [Agent-to-Agent (A2A) protocol](https://a2a-protocol.org) is an open standard for agent interoperability. It uses an **agent card** — a structured JSON document that describes an agent's capabilities, endpoints, and authentication requirements. Rasa reads the agent card to know how to communicate with the external agent at runtime.
+
+## Configuring an External Sub-Agent
+
+### Project structure
+
+Place your external agent configurations in a `sub_agents/` folder inside your Rasa project:
+
+```
+my_project/
+├── config.yml
+├── domain/
+├── data/
+│   └── flows/
+└── sub_agents/
+    └── analytics_agent/
+        ├── config.yml
+        └── agent_card.json
+```
+
+### Agent configuration file
+
+Create a `config.yml` for each external agent in its sub-folder. Point the configuration at the agent card that describes the external service:
+
+```yaml sub_agents/analytics_agent/config.yml
+agent:
+  name: analytics_agent
+  protocol: a2a
+  description: >
+    External agent that provides analytical capabilities including
+    product performance metrics and trend analysis.
+
+configuration:
+  agent_card: ./sub_agents/analytics_agent/agent_card.json
+```
+
+The `name` field must exactly match the name you use in `call` steps inside your flows.
+
+## Invoking an External Agent from a Flow
+
+Use a `call` step to hand off to an external agent. When the `call` target matches a configured sub-agent name, Rasa delegates to that agent instead of executing a flow.
+
+```yaml flows.yml
+flows:
+  product_enquiry:
+    description: >
+      Handle questions that require analytical data about products,
+      such as performance metrics or trend reports.
+    steps:
+      - collect: query
+        description: "The user's analytical question or request"
+      - call: analytics_agent   # external A2A agent
+      - action: utter_can_help_with_anything_else
+```
+
+The agent receives the conversation context, runs autonomously until it completes its task, then returns control to the parent flow. Execution continues with the next step after the `call`.
+
+## Context Management
+
+By default, Rasa shares the full conversation context — all slots, conversation history, and events — with the external agent. You can restrict what gets shared by creating a custom Python module that wraps the agent and filters the input before it is sent.
+
+### Creating a custom agent module
+
+```python sub_agents/analytics_agent/custom_agent.py
+from rasa.agents.protocol.a2a.a2a_agent import A2AAgent
+from rasa.agents.schemas import AgentInput
+
+class AnalyticsAgent(A2AAgent):
+    async def process_input(self, input: AgentInput) -> AgentInput:
+        # Only share the slots this agent actually needs
+        relevant_slots = {"user_id", "account_type", "inquiry_category"}
+        filtered_slots = [
+            slot for slot in input.slots
+            if slot.name in relevant_slots
+        ]
+
+        return AgentInput(
+            id=input.id,
+            user_message=input.user_message,
+            slots=filtered_slots,
+            conversation_history=input.conversation_history,
+            events=input.events,
+            metadata=input.metadata,
+            timestamp=input.timestamp,
+        )
+```
+
+### Registering the custom module
+
+Add the `module` key to your agent's `config.yml`:
+
+```yaml sub_agents/analytics_agent/config.yml
+agent:
+  name: analytics_agent
+  protocol: a2a
+  description: >
+    External agent that provides analytical capabilities including
+    product performance metrics and trend analysis.
+
+configuration:
+  agent_card: ./sub_agents/analytics_agent/agent_card.json
+  module: sub_agents.analytics_agent.custom_agent.AnalyticsAgent
+```
+
+## When to Use External Agent Integration
+
+<CardGroup cols={2}>
+  <Card title="Specialised agents" icon="brain">
+    Your organisation has a dedicated AI agent for a domain (e.g., legal compliance, technical support, financial analysis) that is better maintained separately.
+  </Card>
+  <Card title="Legacy systems" icon="server">
+    You have existing business logic on a different tech stack that would be too costly to rewrite as Rasa custom actions.
+  </Card>
+  <Card title="Third-party AI services" icon="plug">
+    You want to incorporate a third-party conversational AI or tool-calling agent as one step in a larger Rasa-orchestrated flow.
+  </Card>
+  <Card title="Team boundaries" icon="people-group">
+    Different teams own different parts of the assistant and need to deploy independently while still offering a unified user experience.
+  </Card>
+</CardGroup>
+
+## Complete Flow Example with Multiple Agents
+
+```yaml flows.yml
+flows:
+  customer_support:
+    description: >
+      Handle general customer support requests. Delegate technical
+      questions to the tech support agent and billing questions to
+      the billing agent.
+    steps:
+      - collect: issue_type
+        description: "Whether the issue is technical, billing-related, or general"
+        next:
+          - if: slots.issue_type = "technical"
+            then:
+              - call: tech_support_agent
+                next: wrap_up
+          - if: slots.issue_type = "billing"
+            then:
+              - call: billing_agent
+                next: wrap_up
+          - else: wrap_up
+      - id: wrap_up
+        action: utter_can_help_with_anything_else
+```
+
+```yaml sub_agents/tech_support_agent/config.yml
+agent:
+  name: tech_support_agent
+  protocol: a2a
+  description: "Handles technical troubleshooting and product support queries."
+
+configuration:
+  agent_card: ./sub_agents/tech_support_agent/agent_card.json
+```
+
+```yaml sub_agents/billing_agent/config.yml
+agent:
+  name: billing_agent
+  protocol: a2a
+  description: "Handles billing enquiries, invoice questions, and payment issues."
+
+configuration:
+  agent_card: ./sub_agents/billing_agent/agent_card.json
+```
+
+<Tip>
+  Use the `description` field in your agent's `config.yml` to explain what the agent handles. Although this description is not used by the LLM command generator in the same way flow descriptions are, it documents the integration clearly for your team.
+</Tip>

@@ -1,0 +1,240 @@
+---
+title: "Rasa Studio Tutorial: Build a Money Transfer Assistant"
+sidebarTitle: "Tutorial"
+description: "Step-by-step guide to building a CALM-based money transfer assistant in Rasa Studio, covering flows, slots, logic, training, and custom actions."
+---
+
+In this tutorial you build a simple assistant that greets users, introduces itself, and helps with money transfers. By the end you will have a working [CALM](https://rasa.com/docs/learn/concepts/calm/)-based assistant with multiple linked flows, a training run, and an optional custom action for balance validation. No prior Rasa experience is required.
+
+<Note>
+  You need a running Rasa Studio instance and a user account with the `superuser` or `developer` role to follow along. See the [Installation guide](./installation) if you haven't deployed Studio yet.
+</Note>
+
+## Step 1: Create a New Assistant
+
+<Steps>
+  <Step title="Log in to Studio">
+    Open Studio in your browser and sign in with your `superuser` or `developer` credentials.
+  </Step>
+  <Step title="Create the project">
+    On the Welcome page, click **Create new project**. Name your assistant `transfer_money_assistant`, keep **English** as the default language, and click **Create assistant**.
+  </Step>
+</Steps>
+
+## Step 2: Create the Welcome Flow
+
+A *flow* is a series of steps that guide users through a conversation. Your first flow greets the user and introduces the assistant.
+
+<Steps>
+  <Step title="Open the Flow Builder">
+    Navigate to the **Flows** page using the left-hand menu tab.
+  </Step>
+  <Step title="Create the flow">
+    Click **Create flow**. Set the ID to `welcome` and add the description: `Greet the user and introduce yourself`. Click **Save**.
+
+    <Note>
+      The description is critical—Rasa uses it to decide when to trigger the flow. Make it specific and unique.
+    </Note>
+  </Step>
+  <Step title="Add a Send Message step">
+    Click the **+** icon below the Start step and select **Send message**. Click **Select or create response**, then **Create new response**.
+  </Step>
+  <Step title="Write the greeting response">
+    - **Name:** `greet`
+    - **Text:** `Hello! I'm your assistant, created with Rasa Studio. I'm here to help you with money transfers.`
+    - Check **Use contextual response rephraser** so the message sounds natural each time.
+    - Click **Save**.
+  </Step>
+</Steps>
+
+## Step 3: Create the Money Transfer Flow
+
+<Steps>
+  <Step title="Create the flow">
+    Return to the flow list and click **Create flow**. Name it `money_transfer` and add the description: `Ask all the required questions to process a money transfer request from users.` Click **Save**.
+  </Step>
+
+  <Step title="Collect the recipient">
+    1. Add a **Collect information** step.
+    2. Set the description to: `This step inquires about the recipient of the payment.`
+    3. Click **Select or create slot** → **Create slot**. Enter `recipient` as the name and choose **Text** as the type. Click **Save**.
+    4. Click **Select or create response** → **Create new response**. The name auto-fills as `utter_ask_recipient`. Enter the text: `Who would you like to send money to?` and click **Save**.
+    5. Leave **Ask before filling** and **Persist slot value** both disabled—if the user already mentioned a recipient earlier, the assistant won't ask again, and the value resets each session.
+  </Step>
+
+  <Step title="Collect the amount">
+    1. Add another **Collect information** step.
+    2. Set the description to: `This step inquires about the amount of the payment, in US Dollars.`
+    3. Create a new slot named `amount` with type **Float**.
+    4. Create a response named `utter_ask_amount` with text: `How much money would you like to send (in US Dollars)?`
+    5. Optionally click **Add button** to add quick-reply options: `50`, `500`, `1000`, `1500`. Leave the Payload field empty for each button.
+    6. Leave both options disabled.
+  </Step>
+
+  <Step title="Add a funds check with Logic">
+    1. Add a **Logic** step.
+    2. Click the first branch and set the condition: `amount` **is less than or equal** `1000`.
+    3. Click the **Else** branch. Add a **Send message** step here. Create a response named `insufficient_funds` with text: `You don't have sufficient funds to complete this transaction.`
+  </Step>
+
+  <Step title="Collect final confirmation">
+    Under the first (sufficient-funds) branch, continue:
+
+    1. Add a **Collect information** step.
+    2. Set the description to: `This step asks the user to confirm the recipient and the transfer amount.`
+    3. Create a slot named `final_confirmation` with type **Boolean**.
+    4. Create a response named `utter_ask_final_confirmation` with text:
+       ```
+       Please confirm that you want to transfer {amount} to {recipient}.
+       ```
+       Using curly braces inserts the actual slot values into the message.
+    5. Enable **Ask before filling** so the assistant always asks for confirmation even on repeat transfers.
+  </Step>
+
+  <Step title="Branch on confirmation">
+    1. Add a **Logic** step after the collect step.
+    2. Set the first branch condition: `final_confirmation` **is** `True`.
+    3. After the `True` branch, add a **Send message** step. Create a response named `transfer_successful` with text:
+       ```
+       All done. {amount} USD has been sent to {recipient}.
+       ```
+    4. After the **Else** branch, add a **Send message** step. Create a response named `cancel_transfer` with text: `Transfer canceled`.
+  </Step>
+
+  <Step title="Link to the feedback flow">
+    1. After both the `transfer_successful` and `cancel_transfer` steps, add a **Link** step.
+    2. In one Link step, click **Create flow** in the dropdown. Name the new flow `leave_feedback` with description: `This flow collects user feedback on a scale from 1 to 5.`
+    3. Select the same `leave_feedback` flow in the second Link step.
+  </Step>
+</Steps>
+
+## Step 4: Build the Feedback Flow
+
+<Steps>
+  <Step title="Open the leave_feedback flow">
+    Click **Open the flow in a new tab** from the Link step, or navigate to it from the flows list.
+  </Step>
+  <Step title="Add a flow guard">
+    Select the **Start** step. Click on **Flow guards** and choose **Start the flow exclusively via links**. This prevents the LLM from triggering feedback unexpectedly—it only runs after a Link step in `money_transfer`.
+  </Step>
+  <Step title="Ask if the user wants to leave feedback">
+    1. Add a **Collect information** step.
+    2. Description: `Ask user to leave feedback.`
+    3. Create a slot named `feedback` with type **Boolean**.
+    4. Create a response named `utter_ask_feedback` with text: `Do you want to leave feedback?`
+  </Step>
+  <Step title="Branch on feedback willingness">
+    1. Add a **Logic** step. Set the first branch: `feedback` **is** `True`.
+    2. After the **Else** branch, add a **Send message** step. Create a response named `goodbye` with text: `Thank you and have a great day!`
+  </Step>
+  <Step title="Collect the rating">
+    After the `feedback is True` branch:
+
+    1. Add a **Collect information** step.
+    2. Description: `Ask users to rate the assistant's performance.`
+    3. Create a slot named `rating` with type **Float**.
+    4. Create a response named `utter_ask_rating` with text: `How would you rate my performance from 1 to 5?`
+    5. Optionally add buttons for `1`, `2`, `3`, `4`, `5` to make rating easy.
+  </Step>
+</Steps>
+
+Your basic assistant is now complete.
+
+## Step 5: Train and Test
+
+<Steps>
+  <Step title="Start training">
+    Click the **Train** button in the top bar of the Flow Builder.
+  </Step>
+  <Step title="Select flows and train">
+    In the training panel, select all flows. Click **Start training**. Studio validates your flows first—if validation errors appear, click the flow names to navigate to and fix the issues, then try again.
+  </Step>
+  <Step title="Wait for completion">
+    A progress message appears while training runs. When training succeeds, you'll see a green checkmark. If it fails, download the training log from the **Versions** page to investigate.
+  </Step>
+  <Step title="Test your assistant">
+    Navigate to **Try your assistant**. Send messages like `I want to transfer money` or `Help me send 200 dollars to Alice` and verify the flows run as expected.
+  </Step>
+  <Step title="Enable Inspector Mode">
+    Toggle **Inspector Mode** in the top-right corner to see slot values, predicted commands, and flow events alongside your conversation.
+  </Step>
+</Steps>
+
+## Step 6 (Advanced): Add a Custom Action
+
+Replace the hard-coded `amount <= 1000` check with a real Python action that queries an account balance.
+
+<Steps>
+  <Step title="Add a Custom Action step in the flow">
+    Open `money_transfer`. Between the **Collect amount** step and the **Logic** step, add a **Custom Action** step. Click the dropdown and select **Create custom action**.
+
+    - **Name:** `action_validate_sufficient_funds`
+    - **Description:** `Goal: Validate whether the funds are sufficient for the transfer. Check if the slot 'amount' is greater than 1000. If true, set 'has_sufficient_funds' to true. If false, set it to false.`
+  </Step>
+  <Step title="Update the Logic condition">
+    Click the first Logic branch. Create a new slot named `has_sufficient_funds` with type **Boolean**. Set the condition to: `has_sufficient_funds` **is** `True`.
+  </Step>
+  <Step title="Set up a local Rasa project">
+    In your terminal, initialize a new Rasa project:
+
+    ```bash
+    rasa init --template calm
+    ```
+  </Step>
+  <Step title="Implement the action">
+    Open `actions/actions.py` and paste the following code:
+
+    ```python
+    from typing import Any, Text, Dict, List
+    from rasa_sdk import Action, Tracker
+    from rasa_sdk.executor import CollectingDispatcher
+    from rasa_sdk.events import SlotSet
+
+    class ActionValidateSufficientFunds(Action):
+        def name(self) -> Text:
+            return "action_validate_sufficient_funds"
+
+        def run(
+            self,
+            dispatcher: CollectingDispatcher,
+            tracker: Tracker,
+            domain: Dict[Text, Any],
+        ) -> List[Dict[Text, Any]]:
+            # Hard-coded balance for tutorial purposes.
+            # In production, retrieve this from a database or API.
+            balance = 1000
+            transfer_amount = tracker.get_slot("amount")
+            has_sufficient_funds = transfer_amount <= balance
+            return [SlotSet("has_sufficient_funds", has_sufficient_funds)]
+    ```
+  </Step>
+  <Step title="Run the action server and expose it with ngrok">
+    Start the action server:
+
+    ```bash
+    rasa run actions
+    ```
+
+    In a separate terminal, expose it publicly:
+
+    ```bash
+    ngrok http 5055
+    ```
+
+    Copy the HTTPS URL that ngrok prints (for example, `https://abc123.ngrok.io`).
+  </Step>
+  <Step title="Connect the action server to Studio">
+    In Studio, go to **Assistant Settings → Configuration → Action Endpoint**. Enter the ngrok URL followed by `/webhook`:
+
+    ```
+    https://abc123.ngrok.io/webhook
+    ```
+  </Step>
+  <Step title="Re-train and test">
+    Train your assistant again following Step 5. Test the money transfer flow and confirm that amounts over 1000 correctly trigger the insufficient-funds message.
+  </Step>
+</Steps>
+
+<Tip>
+  Once you're ready for production, deploy your action server in your cloud environment and replace the ngrok URL with the stable public URL of your deployed action server.
+</Tip>

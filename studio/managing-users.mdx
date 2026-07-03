@@ -1,0 +1,159 @@
+---
+title: "Managing Users and Permissions in Rasa Studio"
+sidebarTitle: "Managing Users"
+description: "Add users, update role permissions, log out sessions, and configure email notifications in Rasa Studio using Keycloak's admin interface."
+---
+
+Rasa Studio uses [Keycloak](https://www.keycloak.org/) as its identity and access management system. All user creation, permission updates, and session management happen through the Keycloak admin console. This page covers the everyday tasks an admin performs to manage who can access Studio and what they can do.
+
+## User Roles
+
+Studio ships with two primary roles that control what users can do inside the application:
+
+| Role | Capabilities |
+|---|---|
+| **superuser** | Full access to all Studio features, including training, configuration, user-visible settings, and all assistant management tasks |
+| **developer** | Access to build, train, and test assistants; cannot manage organization-level settings or users |
+
+<Note>
+  For a detailed breakdown of every permission associated with each role, see the [Authorization guide](https://rasa.com/docs/studio/installation/setup-guides/authorization-guide/).
+</Note>
+
+## Adding a User
+
+New users are created in the Keycloak admin console, which runs alongside Studio.
+
+<Steps>
+  <Step title="Open the Keycloak admin console">
+    Navigate to your Keycloak URL. For Docker Compose deployments the default is `http://localhost:8081/auth/`. Log in with your Keycloak admin credentials.
+  </Step>
+  <Step title="Select the rasa-studio realm">
+    Use the realm dropdown in the top-left corner to select the **rasa-studio** realm. All Studio users live in this realm.
+  </Step>
+  <Step title="Create the user">
+    Navigate to **Users** in the left menu and click **Add user**. Fill in the required fields (username, email, name) and save.
+  </Step>
+  <Step title="Set a password">
+    Open the newly created user, go to the **Credentials** tab, and set a temporary password. The user will be prompted to change it on first login if you enable the "Temporary" toggle.
+  </Step>
+  <Step title="Assign a role">
+    Go to the **Groups** tab for the user and add them to the appropriate group (`superuser` or `developer`). Group membership controls their permissions in Studio.
+  </Step>
+</Steps>
+
+## Updating User Permissions
+
+To change what an existing user can do in Studio, update their group membership in Keycloak:
+
+<Steps>
+  <Step title="Locate the user">
+    In the Keycloak admin console, navigate to **Users** and find the user you want to update.
+  </Step>
+  <Step title="Open the Groups tab">
+    Click on the user's name to open their profile, then click the **Groups** tab.
+  </Step>
+  <Step title="Update group memberships">
+    Add or remove the user from groups to grant or revoke permissions. Save your changes.
+  </Step>
+</Steps>
+
+## Deleting a User
+
+<Steps>
+  <Step title="Find the user">
+    In Keycloak admin, go to **Users** and locate the user to delete.
+  </Step>
+  <Step title="Delete">
+    Open the kebab menu (three dots) next to the user's name and select **Delete**. Confirm the deletion in the dialog.
+  </Step>
+</Steps>
+
+<Warning>
+  Never delete or modify the `realmadmin` user. This is a system account that Studio requires to communicate with Keycloak APIs. Deleting it will break Studio's authentication and user management functionality.
+</Warning>
+
+## Logging Out a User
+
+If a user needs to be signed out immediately—for example, after their account is compromised or their role is changed—you can terminate their active sessions from Keycloak:
+
+<Steps>
+  <Step title="Open the user's profile">
+    Navigate to **Users**, select the user, and click the **Sessions** tab.
+  </Step>
+  <Step title="Sign out the session">
+    Click **Sign out** next to the active session. The user's token is invalidated and they are immediately logged out of Studio.
+  </Step>
+</Steps>
+
+## Configuring Email Notifications
+
+Keycloak can send automated emails for tasks like password resets, account verification, and login notifications. This requires connecting Keycloak to an SMTP server.
+
+<Steps>
+  <Step title="Open Realm Settings">
+    In the Keycloak admin console (with the **rasa-studio** realm selected), click **Realm Settings** in the left menu.
+  </Step>
+  <Step title="Open the Email tab">
+    Click the **Email** tab. You'll see fields for your SMTP server configuration.
+  </Step>
+  <Step title="Enter SMTP settings">
+    Fill in your SMTP server details:
+
+    | Field | Example |
+    |---|---|
+    | Host | `smtp.example.com` |
+    | Port | `587` (TLS) or `465` (SSL) |
+    | From | `noreply@example.com` |
+    | Username | Your SMTP account username |
+    | Password | Your SMTP account password |
+    | Enable StartTLS | Check if your server requires TLS |
+  </Step>
+  <Step title="Save and test">
+    Save the settings. Use the **Test connection** button (if available) to send a test email and confirm delivery.
+  </Step>
+</Steps>
+
+For a full reference on Keycloak email configuration options, see the [Keycloak Email Configuration documentation](https://www.keycloak.org/docs/latest/server_admin/#_email).
+
+## Authorization and API Access
+
+Studio uses Keycloak's OpenID Connect **Client Credentials Flow** to secure API integrations. If you need programmatic access to the Studio API—for example, to manage conversations, trigger downloads for CI/CD, or build custom integrations—you can use the pre-configured **studio-external** Keycloak client.
+
+### Getting an API Access Token
+
+<Steps>
+  <Step title="Obtain Client ID and Secret">
+    In Keycloak admin, go to **Clients**, select **studio-external** (or your custom client), and navigate to the **Credentials** tab. Click **Regenerate** to get a fresh client secret. Note both the Client ID and Client Secret.
+  </Step>
+  <Step title="Request an access token">
+    Send a POST request to the token endpoint:
+
+    ```bash
+    curl -X POST \
+      https://<your-keycloak-host>/auth/realms/rasa-studio/protocol/openid-connect/token \
+      -H "Content-Type: application/x-www-form-urlencoded" \
+      -d 'grant_type=client_credentials&client_id=<your-client-id>&client_secret=<your-client-secret>'
+    ```
+
+    Replace `<your-keycloak-host>` with your Keycloak URL. For local Docker Compose installs, use `localhost:8081`.
+  </Step>
+  <Step title="Use the token in API requests">
+    Include the returned `access_token` as a Bearer token in the Authorization header of your Studio API requests:
+
+    ```
+    Authorization: Bearer <access_token>
+    ```
+  </Step>
+</Steps>
+
+### Creating a Custom API Client
+
+If you need more granular permissions than the default `studio-external` client provides, you can create a new Keycloak client:
+
+1. In Keycloak admin, go to **Clients** and click **Create**.
+2. Set a Client ID and select **OpenID Connect** as the client type.
+3. On the Capability Config page, enable **Client Authentication** and **Service Account Roles**.
+4. After saving, go to **Service Account Roles** and assign the roles your integration needs (for example, **Manage conversations**).
+5. Retrieve the Client ID and Secret from the **Credentials** tab.
+
+For full API documentation, see the [Studio Conversations API reference](https://rasa.com/docs/reference/api/studio/conversation-api/).

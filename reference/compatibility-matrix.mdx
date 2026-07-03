@@ -1,0 +1,170 @@
+---
+title: "Rasa Pro and Studio Version Compatibility Matrix"
+sidebarTitle: "Compatibility"
+description: "Which versions of Rasa Pro, Rasa Studio, Rasa Pro Services, and Rasa SDK work together — plus Python version support per release."
+---
+
+Running incompatible versions of Rasa Pro, Rasa Studio, and Rasa Pro Services together can cause training failures, missing features, or broken Studio sync. Always check this matrix before upgrading any component. When in doubt, upgrade all components together to their latest compatible versions.
+
+<Note>
+This page documents compatibility as of the latest known release. Check the official matrix at [rasa.com/docs/reference/changelogs/compatibility-matrix](https://rasa.com/docs/reference/changelogs/compatibility-matrix/) for the most current information.
+</Note>
+
+---
+
+## Rasa Studio / Rasa Pro Compatibility
+
+Rasa Studio uses Rasa Pro internally to train and serve assistant models. Each Studio version is pinned to a specific range of Rasa Pro versions. Running mismatched versions will cause Studio to fail to train or deploy your assistant.
+
+| Rasa Studio | Compatible Rasa Pro |
+|---|---|
+| 1.16.x | 3.16.x |
+| 1.15.x | 3.15.x |
+| 1.14.4 and above | 3.14.x |
+| 1.14.1, 1.14.2, 1.14.3 | 3.13.x |
+| 1.13.x | 3.13.x |
+| 1.12.x | 3.12.x |
+| 1.11.x | 3.11.x |
+| 1.10.x | 3.11.x |
+| 1.7.x, 1.8.x, 1.9.x | 3.10.x |
+| 1.6.x | 3.9.9 |
+| 1.3.1, 1.4.x, 1.5.x | 3.8.7 |
+| 1.3.0 | 3.8.4 |
+| 1.2.x | 3.8.x |
+| 1.0.x, 1.1.x | 3.7.x |
+
+---
+
+## Rasa Pro Services Compatibility
+
+Rasa Pro Services is a separately versioned Docker container that powers the analytics pipeline. Its version is independent of Rasa Pro's minor version, but the two **always share the same major version number** (both are currently on major version 3).
+
+| Rasa Pro Services | Compatible Rasa Pro |
+|---|---|
+| 3.8.x | 3.14.x, 3.15.x, 3.16.x |
+| 3.7.x | 3.8.x – 3.15.x |
+| 3.6.x | 3.8.x – 3.14.x |
+| 3.5.x | 3.8.x – 3.13.x |
+| 3.4.x | 3.8.x – 3.12.x |
+| 3.3.x | 3.8.x – 3.10.x |
+| 3.2.x | 3.7.x, 3.8.x |
+| 3.1.x | 3.6.x |
+| 3.0.x | 3.3.x – 3.5.x |
+
+<Tip>
+When upgrading Rasa Pro, check whether a newer version of Rasa Pro Services is also required. Rasa Pro Services 3.8.x supports a wider range of Rasa Pro versions than earlier Services releases.
+</Tip>
+
+---
+
+## Python Version Support
+
+| Rasa Pro version range | Supported Python versions |
+|---|---|
+| 3.14.x and later | Python 3.10, 3.11, 3.12, 3.13 |
+| 3.11.x – 3.13.x | Python 3.9, 3.10, 3.11 |
+| 3.8.x – 3.10.x | Python 3.8, 3.9, 3.10, 3.11 |
+
+<Warning>
+Python 3.9 support was dropped in Rasa Pro 3.14. Python 3.8 support was dropped in Rasa Pro 3.11. TensorFlow-based NLU components (DIETClassifier, etc.) are only available on Python < 3.12.
+</Warning>
+
+---
+
+## Platform Feature Availability
+
+Some features are available in both Rasa Studio and Rasa Pro, while others are exclusive to one or the other. The table below summarizes feature availability across the two surfaces.
+
+### Flow Features
+
+| Feature | Studio | Pro |
+|---|---|---|
+| Flow: slot persistence | ✅ | ✅ |
+| Flow: NLU trigger | ✅ | ✅ |
+| Flow: flow guard | ✅ | ✅ |
+| Flow: flow guard context namespace | ❌ | ✅ |
+| Flow: call step | ✅ | ✅ |
+| Flow: set slots | ✅ | ✅ |
+| Flow: button payload | ✅ | ✅ |
+| Flow: Next / Noop | ❌ Noop | ✅ Both |
+| Flow: slot comparisons | ❌ | ✅ |
+| Flow: nested logic | ✅ | ✅ |
+| Flow: action trigger search | ❌ | ✅ |
+
+### Repair Patterns
+
+| Pattern | Studio | Pro |
+|---|---|---|
+| `pattern_user_silence` | ✅ | ✅ |
+| `pattern_collect_info` | ❌ | ✅ |
+| `pattern_continue` | ✅ | ✅ |
+| `pattern_correction` | ✅ | ✅ |
+| `pattern_cancel_flow` | ✅ | ✅ |
+| `pattern_skip_question` | ✅ | ✅ |
+| `pattern_chitchat` | ✅ | ✅ |
+| `pattern_completed` | ✅ | ✅ |
+| `pattern_clarification` | ✅ | ✅ |
+| `pattern_internal_error` | ✅ | ✅ |
+| `pattern_cannot_handle` | ✅ | ✅ |
+| `pattern_human_handoff` | ✅ | ✅ |
+| `pattern_customer_satisfaction` | ✅ | ✅ |
+| System flow response editing | ✅ | ✅ |
+
+### Slots
+
+| Slot type | Studio | Pro |
+|---|---|---|
+| Boolean | ✅ | ✅ |
+| Float | ✅ | ✅ |
+| Categorical | ✅ | ✅ |
+| Any | ✅ | ✅ |
+| Text | ✅ | ✅ |
+| List | ❌ | ✅ |
+| Custom | ❌ | ✅ |
+| Basic slot mapping | ✅ | ✅ |
+| Advanced slot mapping | ❌ | ✅ |
+
+### Testing and Debugging
+
+| Feature | Studio | Pro |
+|---|---|---|
+| Inspector | ✅ | ✅ |
+| Inspector: model metadata (tokens, cost) | ✅ | ❌ |
+| Inspector: replay | ✅ | ❌ |
+| Inspector: restart | ✅ | ✅ |
+| E2E testing: generate | ✅ | ✅ |
+| E2E testing: run | ❌ | ✅ |
+| Mock custom actions | ❌ | ✅ |
+
+### LLM and Enterprise Search
+
+| Feature | Studio | Pro |
+|---|---|---|
+| Multi-LLM routing | ✅ | ✅ |
+| Enterprise Search (RAG) config | ✅ | ✅ |
+| Enterprise Search: custom info retrievers | ❌ | ✅ |
+| Enterprise Search: vector store connectors | ❌ | ✅ |
+| Enterprise Search: extractive search | ❌ | ✅ |
+| Command generator prompt editing | ✅ | ✅ |
+| Rephraser prompt editing | ✅ | ✅ |
+| Fine-tune recipe | ❌ | ✅ |
+| Custom components | ❌ | ✅ |
+
+---
+
+## General Guidance
+
+<CardGroup cols={2}>
+  <Card title="Keep versions aligned" icon="link">
+    Always upgrade Rasa Pro, Rasa Studio, and Rasa Pro Services together. A minor version bump in Rasa Pro typically requires a corresponding Studio and Services release.
+  </Card>
+  <Card title="Pin before upgrading" icon="lock">
+    Before upgrading in production, test the new version combination in a staging environment. Review the [changelog](/reference/rasa-pro-changelog) for breaking changes.
+  </Card>
+  <Card title="Check Python compatibility" icon="python">
+    Verify your Python version is supported before upgrading Rasa Pro. Python 3.10 or 3.11 is recommended for the broadest component support.
+  </Card>
+  <Card title="Services version lag is normal" icon="info">
+    Rasa Pro Services releases trail behind Rasa Pro minor releases. A single Services version often covers multiple Pro versions.
+  </Card>
+</CardGroup>

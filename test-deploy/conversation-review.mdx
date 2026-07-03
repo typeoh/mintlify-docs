@@ -1,0 +1,157 @@
+---
+title: "Conversation Review: Analyze Real User Interactions in Rasa"
+sidebarTitle: "Conversation Review"
+description: "Browse, filter, and tag production conversations in Rasa Studio to find patterns, diagnose failures, and prioritize improvements for your assistant."
+---
+
+Conversation Review is a browser-based tool in Rasa Studio that lets you browse, filter, and analyze the real conversations your assistant has with users. While E2E tests tell you whether your assistant behaves correctly for scenarios you anticipated, Conversation Review shows you what actually happens in production—including edge cases, out-of-scope requests, and failure patterns you didn't predict. Use it to continuously improve your assistant based on real user behavior.
+
+## Requirements
+
+Conversation Review requires your Rasa assistant to be connected to Rasa Studio via a Kafka broker. Both your assistant and Studio must connect to the same Kafka instance and listen to the same topic. You also need to set the `assistant_id` field in your assistant's `config.yml` to match the assistant name in Studio.
+
+For Kafka configuration details, see the [Kafka event broker reference](https://rasa.com/docs/reference/integrations/event-brokers/#kafka-event-broker).
+
+## Getting started
+
+<Steps>
+  <Step title="Select your assistant">
+    Open Rasa Studio and choose your assistant from the dropdown menu in the left navigation bar.
+  </Step>
+  <Step title="Open Conversation Review">
+    Click **Conversation Review** in the left navigation bar. You will see the Conversations Table listing the most recent conversations.
+  </Step>
+  <Step title="Browse and filter conversations">
+    By default, the table shows the 100 most recent conversations from the last seven days, sorted by descending start time. Apply filters to narrow down to the conversations you want to analyze.
+  </Step>
+  <Step title="Open a conversation">
+    Click any row in the table to open the Conversation Details panel and the Conversation Stream for that session.
+  </Step>
+</Steps>
+
+## Conversations Table
+
+The Conversations Table is your main entry point for browsing production conversations. Each row represents a single conversation session.
+
+| Column | Description |
+|---|---|
+| Conversation ID | Unique ID for the conversation session |
+| Session Start | Timestamp of the first event, adjusted to your local timezone |
+| Tags | Tags you or teammates have added to this conversation |
+| Messages | Number of user messages sent during the session |
+| Reviewed | Green checkbox when someone has viewed and marked this conversation as reviewed |
+
+### Filters
+
+Use filters to surface the conversations most relevant to your analysis. Click the filter icon in the top-left corner of the Conversations Table to access them.
+
+| Filter | Description |
+|---|---|
+| Timeframe | Filter by session start timestamp |
+| Conversation ID | Find a specific conversation by ID |
+| Predicted Intent | Filter by intents predicted during the conversation |
+| Flow (CALM only) | Filter by flows started during the conversation |
+| Tags | Filter by tags you or your team have applied |
+| Response | Filter by assistant responses used in the conversation |
+| Channel | Filter by the channel where the conversation occurred |
+| Language | Filter by conversation language |
+| Slot | Filter by any slot value set during the conversation |
+| UserID | Filter by the user's unique identifier |
+
+## Conversation Details panel
+
+Click any conversation in the table to open the Details panel on the right. The panel shows session-level metadata for the conversation you selected:
+
+| Field | Description |
+|---|---|
+| Conversation ID | Unique ID for this session |
+| Session Start | Timestamp of the first event |
+| Model ID | The model version your assistant used for this conversation |
+| Channel | The channel where the conversation took place |
+| User Messages | Total user messages in the session |
+| Flows (CALM only) | Flows started and their attributes |
+| Tags | Tags associated with this conversation |
+
+Scroll to the bottom of the Details panel to add or remove tags for the conversation you are reviewing.
+
+## Conversation Stream
+
+The Conversation Stream shows the conversation turn by turn. Click on any message, response, or event banner to see additional details in the Details panel.
+
+### User messages
+
+User messages appear on the right side of the stream. Clicking a message shows:
+- Message timestamp
+- Message ID
+- Sequential position in the conversation
+- For NLU assistants: predicted intents with confidence scores
+
+### Slot events
+
+When a slot is set, a **yellow banner** appears in the stream. Click it to see the slot name, the value that was set, the event timestamp, and the event's position in the conversation. Slots are your assistant's memory—they store user-provided information like names, account numbers, and preferences throughout a session.
+
+### Flow events (CALM assistants)
+
+For CALM assistants, **blue banners** mark flow lifecycle events. Click any banner to see the flow name, event type, timestamp, and position in the conversation. The possible flow events are:
+
+| Event | Meaning |
+|---|---|
+| Flow started | The assistant started a flow in response to the user |
+| Flow interrupted | The flow paused because another flow was triggered |
+| Flow resumed | The flow restarted from where it was paused |
+| Flow completed | The flow finished successfully |
+| Flow cancelled | The user cancelled the flow during the conversation |
+
+## Conversation tags
+
+Tags let you categorize conversations so you and your team can organize review work and prioritize improvements. You can create any tags that make sense for your workflow.
+
+Common tagging patterns include:
+
+<Tabs>
+  <Tab title="Topic tags">
+    Identify what the conversation was about, especially for out-of-scope requests your assistant couldn't handle:
+
+    - `topic-pollen-index`
+    - `topic-refund-request`
+    - `topic-account-merge`
+  </Tab>
+  <Tab title="Issue tags">
+    Flag what went wrong in a conversation:
+
+    - `out-of-scope` — user asked about something outside the assistant's domain
+    - `bad-routing` — the assistant triggered the wrong flow
+    - `slot-extraction-failure` — a slot was not filled correctly
+  </Tab>
+  <Tab title="Action tags">
+    Specify what should happen next:
+
+    - `needs-further-analysis` — flag for a deeper review
+    - `implement-behavior` — the assistant should be able to handle this but can't yet
+    - `add-e2e-test` — this conversation should become a test case
+  </Tab>
+</Tabs>
+
+Once you have applied tags to conversations, use the **Tags** filter in the Conversations Table to group all conversations with the same tag. This makes it easy to batch-review similar issues and prioritize which improvements to make first.
+
+## Automatic conversation deletion
+
+To comply with data retention regulations and data protection requirements, you can configure Rasa to automatically delete conversations after a specified retention period. This ensures that production conversation data is not kept longer than necessary.
+
+See the [automatic conversation deletion reference](https://rasa.com/docs/reference/deployment/automatic-conversation-deletion/) for configuration details.
+
+## Conversations API
+
+For programmatic access to your conversation data—bulk tagging, exporting conversations, or integrating with external ticketing systems—use the Conversations API.
+
+```bash
+# Example: list conversations with a specific tag
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+  "https://studio.rasa.com/api/v1/conversations?tag=needs-further-analysis"
+```
+
+See the [Conversations API documentation](https://rasa.com/docs/reference/api/studio/conversation-api/) for the full API reference.
+
+<Tip>
+  When you find a conversation in Conversation Review that exercises an interesting edge case, add it to your E2E test suite. Use the conversation as the basis for a new test case so the behavior is automatically checked on every future deployment. This feedback loop—production conversations feeding new E2E tests—is one of the most effective ways to continuously improve your assistant's robustness.
+</Tip>

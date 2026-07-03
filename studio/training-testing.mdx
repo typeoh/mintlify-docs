@@ -1,0 +1,174 @@
+---
+title: "Train and Test Your Rasa Studio Assistant"
+sidebarTitle: "Train & Test"
+description: "Train your Rasa Studio assistant from the UI, validate flows, monitor progress, test conversations with Inspector Mode, and debug training errors."
+---
+
+Training compiles your flows, responses, slots, NLU data, and configuration into a working model. Once trained, you can test conversations directly inside Studio using the **Try your assistant** page, with optional Inspector Mode for deep debugging. This page covers both training and testing.
+
+<Note>
+  Training requires specific permissions. Make sure your account has the `superuser` or `developer` role before proceeding.
+</Note>
+
+## Training in Studio
+
+Training from the Studio UI is the recommended approach for rapid iteration. Studio handles validation, model compilation, and versioning without requiring a local Rasa installation.
+
+### Start Training
+
+<Steps>
+  <Step title="Open the Flow Builder">
+    Navigate to the **Flows** page. The **Train** button is visible in the top bar.
+  </Step>
+  <Step title="Open the training panel">
+    Click **Train**. A panel slides open showing all your flows.
+  </Step>
+  <Step title="Select flows to include">
+    Make sure all the flows you want in the trained model are selected. NLU data, responses, and all other primitives saved in Studio are always included automatically—you only need to choose which flows to include.
+  </Step>
+  <Step title="(Optional) Select a flow version">
+    If you have saved stable versions of flows, a toggle appears letting you choose between **Draft** (latest changes) and **Stable** (last saved snapshot). Use **Stable** if you don't want in-progress edits to affect this training run.
+  </Step>
+  <Step title="Click Start training">
+    Click **Start training**. Studio validates your flows first, then begins model compilation.
+  </Step>
+</Steps>
+
+### Flow Validation
+
+Before training starts, Studio runs a validation pass over all selected flows. This catches common issues early and saves time compared to discovering errors mid-training.
+
+If validation finds problems, you'll see an **"Unable to train"** message with a list of affected flows. Click any flow name to jump directly to the issue and fix it.
+
+Common validation errors include:
+
+- Missing or empty response references
+- Logic branches with no subsequent steps
+- Custom action names that don't match the configured action server
+- Slots referenced in conditions that haven't been created
+
+Once all errors are resolved, click **Start training** again.
+
+### Monitoring Training Progress
+
+After validation passes, training begins automatically. A progress message appears in the panel. Other users in Studio can see the training status but cannot stop or restart the process until it completes.
+
+### Training Outcomes
+
+<Tabs>
+  <Tab title="Success">
+    When training completes successfully, you see a green checkmark and a success message. The new model version appears in the **Versions** page and becomes available for testing.
+
+    Navigate to **Try your assistant** to test the newly trained version immediately.
+  </Tab>
+  <Tab title="Failure">
+    If training fails, a failure message appears. Download the training log from the **Versions** page (click the three-dot menu next to the version) to see detailed error output.
+
+    To reproduce the error locally for deeper investigation:
+
+    1. Download the model input files from the **Versions** page.
+    2. Set up a matching local Rasa Pro environment.
+    3. Run training with debug output:
+
+    ```bash
+    rasa train --debug
+    ```
+  </Tab>
+  <Tab title="Stopped">
+    The user who initiated training can stop it at any time by clicking **Stop training**. This terminates the process and marks the version as stopped. You'll need to start a new training run to get a usable model.
+  </Tab>
+</Tabs>
+
+## Training Locally with Rasa Pro
+
+Advanced users who need custom components, additional integration steps, or full control over the training process can train locally using the Rasa CLI.
+
+<Steps>
+  <Step title="Download your assistant files">
+    **Option A — Via Studio UI:** Go to the **Versions** page, locate the version you want, click the three-dot menu, and download the assistant files.
+
+    **Option B — Via Rasa CLI:**
+
+    ```bash
+    rasa studio download <assistant-name>
+    ```
+
+    This downloads the following file structure:
+
+    ```
+    ├── endpoints.yml
+    ├── config.yml
+    ├── domain.yml
+    └── data/
+        ├── studio_flows.yml
+        └── studio_nlu.yml
+    ```
+  </Step>
+  <Step title="Run training locally">
+    Place the files in your working directory and run:
+
+    ```bash
+    rasa train
+    ```
+  </Step>
+</Steps>
+
+## Testing with Try Your Assistant
+
+The **Try your assistant** page gives you a live chat interface to test any trained version of your assistant before deploying to production.
+
+### Starting a Test Conversation
+
+1. Click **Try your assistant** in the left navigation.
+2. If your assistant supports multiple languages, select one from the dropdown.
+3. Confirm the correct assistant version is selected. To switch versions, go to **Assistant Versions** and click the chat icon next to the version you want.
+4. Send a message to begin the conversation.
+
+### Basic Mode: Live Flow Preview
+
+By default, the page shows a **Live Flow Preview** panel alongside the chat. As you converse, the preview panel highlights which step your assistant is currently executing in the active flow. Use this to quickly verify that the assistant follows the expected conversation path.
+
+### Inspector Mode: Debugging
+
+Toggle **Inspector Mode** using the button in the top-right corner to unlock deeper diagnostic information.
+
+<CardGroup cols={3}>
+  <Card title="View Events" icon="list">
+    Click any message to see the slots that were set, flows that were triggered, and other key events at that moment in the conversation.
+  </Card>
+  <Card title="Predicted Commands" icon="terminal">
+    Select a user message to see the exact command the LLM predicted and understand why a particular flow or step was taken.
+  </Card>
+  <Card title="Model Details" icon="microchip">
+    Click an assistant message to inspect the full LLM prompt, raw input, and token usage—useful for understanding performance and API costs.
+  </Card>
+</CardGroup>
+
+### Conversation Replay
+
+In Inspector Mode, click the **Replay** icon next to a "Waiting for user input" event to rewind the conversation back to that point. You can then type a different message to test alternate paths without starting over from the beginning.
+
+### Downloading Conversations and Tests
+
+Use the menu icon (top-right of the conversation panel) to export the conversation:
+
+- **Download logs** — Full deployment logs for the running assistant.
+- **Download conversation** — A shareable transcript of the current conversation.
+- **Download E2E Tests** — Export the conversation as end-to-end test cases you can run with `rasa test` in your CI/CD pipeline.
+
+## Common Training Errors and Fixes
+
+| Error | Likely Cause | Fix |
+|---|---|---|
+| "Unable to train" / validation error | Missing response in a Send Message or Collect step | Open the listed flow, find the step with the missing response, and create or select one |
+| "Slot not found" | A Logic condition references a slot that doesn't exist | Create the slot in the Slots CMS section or directly in the Logic step |
+| Training fails with log output | Invalid YAML in custom `config.yml` or `endpoints.yml` | Check your assistant's Configuration settings for syntax errors |
+| Model loads but intent not recognized | No NLU training examples for the intent | Add training examples in the NLU section of the CMS |
+
+## Re-Training After Changes
+
+Every time you make significant changes to flows, responses, or slots, you need to re-train before the changes take effect in testing or production. Studio shows which version of the model is currently active on the **Try your assistant** page so you can confirm you're testing the latest trained build.
+
+<Tip>
+  For voice assistants, the **Try your assistant** page also supports a voice mode toggle. Click **Call** to test speech interactions if your license includes voice capabilities.
+</Tip>

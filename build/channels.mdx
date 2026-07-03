@@ -1,0 +1,204 @@
+---
+title: "Connecting Your Rasa Assistant to Messaging Channels"
+sidebarTitle: "Channels"
+description: "Connect your Rasa assistant to web, Slack, Telegram, Twilio, and voice platforms. Configure credentials.yml and test locally with ngrok."
+---
+
+A channel connector is the bridge between your Rasa assistant and a messaging or voice platform. Each connector handles the incoming webhook from the platform, translates the payload into a format Rasa understands, and sends responses back in the format the platform expects. You configure connectors in `credentials.yml` and Rasa exposes a dedicated webhook URL for each one at runtime.
+
+## Install the channels dependency
+
+Most channel connectors require the `channels` extra package. Install it alongside `rasa-pro`:
+
+```bash
+pip install 'rasa-pro[channels]'
+```
+
+## Available channels
+
+<CardGroup cols={2}>
+  <Card title="Website widget" icon="globe">
+    Embed the official Rasa Chat Widget on any page with a single HTML snippet. Uses SocketIO for real-time messaging.
+  </Card>
+  <Card title="Slack" icon="slack">
+    Receive and send messages in Slack workspaces. Supports interactive components like buttons and menus.
+  </Card>
+  <Card title="Telegram" icon="paper-plane">
+    Connect to Telegram bots with full support for inline buttons, images, stickers, and other rich message types.
+  </Card>
+  <Card title="Facebook Messenger" icon="facebook">
+    Serve users directly inside Facebook Messenger threads.
+  </Card>
+  <Card title="Twilio SMS" icon="message">
+    Send and receive SMS messages through Twilio's API.
+  </Card>
+  <Card title="Microsoft Bot Framework" icon="microsoft">
+    Integrate with Teams, Cortana, and other Microsoft channels via the Bot Framework adapter.
+  </Card>
+  <Card title="Audiocodes VoiceAI Connect" icon="phone">
+    Voice-ready channel for contact center and IVR deployments via Audiocodes.
+  </Card>
+  <Card title="Jambonz" icon="microphone">
+    Open-source voice application platform supporting real-time audio streaming.
+  </Card>
+  <Card title="Twilio Voice" icon="phone-volume">
+    Inbound and outbound voice calls through Twilio's telephony infrastructure.
+  </Card>
+</CardGroup>
+
+## Configuring credentials.yml
+
+Every channel you enable needs a block in `credentials.yml`. The keys differ per channel, but the pattern is always the same: add the channel name as a top-level key and supply the required credentials underneath.
+
+```yaml
+# credentials.yml
+
+# REST endpoint — no credentials needed, useful for testing
+rest:
+
+# Slack
+slack:
+  slack_channel: "CA003L0XZ"       # channel ID (right-click → Copy Link)
+  slack_token: "xoxb-XXX"          # Bot User OAuth Access Token
+  slack_signing_secret: "YYY"      # Signing secret from Basic Information
+
+# Telegram
+telegram:
+  access_token: "490161424:AAGlRx..."
+  verify: "your_bot_username"
+  webhook_url: "https://your-domain.com/webhooks/telegram/webhook"
+
+# SocketIO (for website widget)
+socketio:
+  user_message_evt: user_uttered
+  bot_message_evt: bot_uttered
+  session_persistence: true
+```
+
+Restart `rasa run` after every change to `credentials.yml` for the new endpoints to become active.
+
+## Setting up each channel
+
+<Tabs>
+  <Tab title="Website widget">
+    Set up the SocketIO channel in `credentials.yml`, then drop the Rasa Chat Widget snippet into any HTML page:
+
+    ```html
+    <!doctype html>
+    <html lang="en">
+      <head>
+        <script
+          type="module"
+          src="https://unpkg.com/@rasahq/chat-widget-ui/dist/rasa-chatwidget/rasa-chatwidget.esm.js"
+        ></script>
+        <link
+          rel="stylesheet"
+          href="https://unpkg.com/@rasahq/chat-widget-ui/dist/rasa-chatwidget/rasa-chatwidget.css"
+        />
+      </head>
+      <body>
+        <rasa-chatbot-widget server-url="https://your-rasa-server.com"></rasa-chatbot-widget>
+      </body>
+    </html>
+    ```
+
+    You can also use the REST input channel for custom integrations. Post messages to `http://<host>:5005/webhooks/rest/webhook` and receive responses synchronously:
+
+    ```json
+    { "sender": "user123", "message": "Hello!" }
+    ```
+  </Tab>
+
+  <Tab title="Slack">
+    <Steps>
+      <Step title="Create a Slack App">
+        Go to [api.slack.com/apps](https://api.slack.com/apps) and click **Create New App**. Select your development workspace.
+      </Step>
+      <Step title="Add OAuth scopes">
+        In **OAuth & Permissions → Scopes**, add at minimum: `app_mentions:read`, `channels:history`, `chat:write`, `groups:history`, `im:history`, `mpim:history`, and `reactions:write`.
+      </Step>
+      <Step title="Install to workspace">
+        Click **Install App to Workspace**. Copy the **Bot User OAuth Access Token** (starts with `xoxb`) into `credentials.yml` as `slack_token`.
+      </Step>
+      <Step title="Copy the signing secret">
+        Under **Basic Information**, copy the **Signing Secret** into `credentials.yml` as `slack_signing_secret`.
+      </Step>
+      <Step title="Configure the webhook">
+        In **Event Subscriptions**, enable events and set the request URL to `https://<your-host>/webhooks/slack/webhook`. Subscribe to `message.channels`, `message.groups`, `message.im`, and `message.mpim`.
+      </Step>
+    </Steps>
+
+    ```yaml
+    # credentials.yml
+    slack:
+      slack_channel: "CA003L0XZ"
+      slack_token: "xoxb-XXX"
+      slack_signing_secret: "YYY"
+      use_threads: false
+      conversation_granularity: "sender"
+    ```
+  </Tab>
+
+  <Tab title="Telegram">
+    <Steps>
+      <Step title="Create a bot with BotFather">
+        Open [t.me/BotFather](https://web.telegram.org/#/im?p=@BotFather), send `/newbot`, and follow the instructions. BotFather gives you an `access_token` and a bot username (`verify`).
+      </Step>
+      <Step title="Add credentials">
+        Paste the values into `credentials.yml` and set `webhook_url` to your public Rasa server URL:
+
+        ```yaml
+        telegram:
+          access_token: "490161424:AAGlRx..."
+          verify: "my_rasa_bot"
+          webhook_url: "https://your-domain.com/webhooks/telegram/webhook"
+        ```
+      </Step>
+      <Step title="Handle the /start message">
+        Telegram sends `/start` when a user opens the chat for the first time. Make sure your assistant handles this intent so the first interaction feels natural.
+      </Step>
+    </Steps>
+
+    <Note>
+      Telegram supports rich response types including inline buttons, photos,
+      audio, stickers, and location data through the `custom` field in your
+      domain responses.
+    </Note>
+  </Tab>
+</Tabs>
+
+## Testing channels locally with ngrok
+
+External platforms like Slack and Telegram need a publicly reachable URL to send webhook events to. When you are developing locally, use [ngrok](https://ngrok.com/) to tunnel your local port to the internet:
+
+```bash
+# Terminal 1: start the tunnel
+ngrok http 5005
+
+# Terminal 2: start Rasa
+rasa run
+```
+
+ngrok prints a URL like `https://26e7e7744191.ngrok.io`. Use that as your webhook base, for example:
+
+```
+https://26e7e7744191.ngrok.io/webhooks/slack/webhook
+```
+
+<Warning>
+  The free ngrok tier limits you to 40 connections per minute. For sustained
+  testing, consider a paid ngrok plan or an alternative tunneling tool.
+</Warning>
+
+## Custom connectors
+
+If you need to integrate with a proprietary system or an unsupported platform, you can build a custom connector by implementing the `InputChannel` interface and registering it in `credentials.yml`:
+
+```yaml
+# credentials.yml
+mypackage.MyCustomConnector:
+  api_key: ${MY_CHANNEL_API_KEY}
+  webhook_secret: ${MY_CHANNEL_WEBHOOK_SECRET}
+```
+
+Your custom class handles deserialization of incoming messages and serialization of outgoing responses, giving you full control over the wire format and authentication scheme.

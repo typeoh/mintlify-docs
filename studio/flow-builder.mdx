@@ -1,0 +1,140 @@
+---
+title: "Studio Flow Builder: Visually Design Conversation Flows"
+sidebarTitle: "Flow Builder"
+description: "Use Rasa Studio's visual, node-based Flow Builder to design conversation logic with steps for messages, data collection, branching, and actions."
+---
+
+The Flow Builder is the heart of Rasa Studio. It gives you a visual, node-based canvas where you can design every step of a conversation—what your assistant says, what information it collects, how it branches based on conditions, and when it calls external actions. No YAML editing is required.
+
+## Understanding Flows
+
+In Rasa, every piece of business logic lives in a *flow*. A flow represents a task your assistant can complete—such as booking an appointment, checking an account balance, or transferring money. Flows are made up of steps that define the assistant's behavior at each point in the conversation.
+
+<Note>
+  Flows use Rasa's CALM (Conversational AI with Language Models) framework. The LLM decides which flow to activate based on the user's message and each flow's description. Writing clear, specific descriptions is the single most important thing you can do to ensure correct flow routing.
+</Note>
+
+## Creating a New Flow
+
+<Steps>
+  <Step title="Open the Flow Builder">
+    Navigate to the **Flows** page from the left-hand menu. You'll see a table listing all existing flows, sorted by the date of last edit.
+  </Step>
+  <Step title="Click Create flow">
+    Click the **Create flow** button. A modal appears asking for the flow ID and description.
+  </Step>
+  <Step title="Set the ID and description">
+    - **Flow ID:** Use lowercase letters, numbers, and underscores. Avoid spaces and special characters like `+`, `/`, or `!`. Example: `book_appointment`.
+    - **Description:** Write a detailed summary of the flow's purpose. This is what the LLM reads to decide when to trigger the flow. Be specific and unique across flows.
+    - Click **Save** to create the flow and open it on the canvas.
+  </Step>
+</Steps>
+
+## Step Types
+
+Each flow starts with a **Start** step, which is where you configure how the flow gets triggered. You then build the flow by adding steps one after another. Click the **+** icon below any step to insert a new one.
+
+<Accordion title="Send Message">
+  Use this step to have your assistant send a text message, with optional links, to the user. You select or create a named *response* that holds the message text.
+
+  - Responses can include multiple variations; the assistant picks one randomly.
+  - Enable **Use contextual response rephraser** to have an LLM rephrase the response naturally based on conversation context.
+  - Reference slot values in message text using curly braces: `Your balance is {account_balance}`.
+  - Add clickable links (external URLs, internal app links, phone, or email).
+</Accordion>
+
+<Accordion title="Collect Information">
+  Use this step to ask the user a question and store their answer in a *slot*. Slots are your assistant's memory.
+
+  - Choose or create a slot to store the answer (see [Slot Types](#slot-types) below).
+  - The response name defaults to `utter_ask_{slot_name}`.
+  - Optionally add quick-reply **buttons** to make it easy for users to choose from structured options.
+  - Use a **custom action** instead of a text response if you need to display dynamic data.
+
+  **Collection rule options:**
+  - **Ask before filling:** Always ask the question even if the slot already has a value.
+  - **Prevent digressions:** Keep the user on track—don't let them switch topics until this slot is filled.
+  - **Persist slot value:** Remember the value across different flow contexts in the same conversation.
+</Accordion>
+
+<Accordion title="Logic (If/Then/Else)">
+  Use this step to branch the conversation based on conditions. You can check slot values, compare numbers, test equality, or check whether a slot is set.
+
+  Supported operators: `>`, `>=`, `<`, `<=`, `=`, `!=`, `is`, `is not`, `contains`, `matches`, `notmatches`, `is set`, `is empty`.
+
+  You can combine multiple conditions within a branch (all must match). Add as many named branches as you need. The **Else** branch is always present and cannot be deleted—it catches all cases where no other branch matches.
+
+  <Warning>
+    Deleting a Logic step deletes all its branches and any steps that follow them. Consider updating conditions or adding steps above the Logic step instead of deleting it.
+  </Warning>
+</Accordion>
+
+<Accordion title="Custom Action">
+  Use this step to call a Python function running on an external action server. Custom actions can query APIs, read from databases, set slot values, and send custom messages.
+
+  You declare the action in Studio by name and description. The actual implementation lives in `actions/actions.py` in your Rasa project. The name in Studio must exactly match the `name()` return value of your Python class.
+
+  See [Custom Actions](./custom-actions) for full setup details.
+</Accordion>
+
+<Accordion title="Link to Another Flow">
+  Use a **Link** step to end the current flow and start a different one. This is how you chain flows together in sequence—for example, linking to a `leave_feedback` flow after completing a transaction.
+
+  The linked flow runs to completion before the conversation ends (it does not return to the originating flow).
+</Accordion>
+
+<Accordion title="Call (Embed) Another Flow">
+  Use a **Call** step to embed a sub-flow inline. Unlike a Link step, the conversation returns to the calling flow after the sub-flow finishes. Useful for reusable segments like address collection or identity verification.
+</Accordion>
+
+<Accordion title="Set Slots">
+  Use this step to set one or more slot values directly without user input. Useful for initializing values, resetting slots, or branching based on computed data.
+</Accordion>
+
+## Slot Types
+
+When you create a Collect Information step, you define a slot to store the user's response. Choose the type that matches the data you're collecting.
+
+| Type | Use for |
+|---|---|
+| **Text** | Names, cities, countries, free-form strings |
+| **Float** | Numbers with decimal points: amounts, ages, ratings |
+| **Boolean** | Yes/No, True/False, confirmed/rejected |
+| **Categorical** | A fixed set of options: low/medium/high, red/blue/green |
+| **Any** | Arbitrary or mixed data types |
+
+<Tip>
+  Use a naming convention to keep slots organized. Prefix flow-specific slots with the flow name (e.g., `money_transfer_recipient`) and global slots shared between flows with `global_` (e.g., `global_user_id`).
+</Tip>
+
+## Setting Flow Guards
+
+Flow guards control how a flow can be triggered. By default, CALM can start any flow based on its description. You can restrict this behavior in the **Start** step.
+
+Select the Start step, open the **Flow guards** panel, and choose **Start the flow exclusively via links**. This prevents the LLM from automatically triggering the flow; it will only start when another flow explicitly uses a Link or Call step to reach it.
+
+Use flow guards for:
+- Feedback or satisfaction-collection flows that should only run after a task completes
+- Sub-flows that require context from a parent flow to function correctly
+
+## Linking and Calling Flows
+
+You can create new flows directly from within the flow editor without leaving the canvas. When you add a Link or Call step, select **Create flow** from the dropdown to define a new flow inline. You can also open any linked flow in a new browser tab by clicking the **Open the flow in a new tab** icon on the step.
+
+## System Flows
+
+Studio includes pre-built system flows that handle common assistant behaviors such as human handoff (`pattern_human_handoff`), customer satisfaction surveys (`pattern_customer_satisfaction`), and clarification requests. These flows appear alongside your custom flows in the flow list and can be viewed but not deleted.
+
+## Managing Flows
+
+From the flow table on the main Flows page, you can:
+
+- **Search** flows by name using the search bar.
+- **Edit** a flow's description by opening it and selecting the Start step.
+- **Rename** a flow by clicking the pencil icon next to the flow's ID.
+- **Duplicate** a flow by hovering over its name and clicking **Duplicate**.
+- **Delete** a flow by hovering and clicking **Delete**, then confirming by typing the flow name.
+
+## Navigating the Canvas
+
+The Flow Builder canvas supports zoom, pan, and keyboard navigation. Use the controls in the bottom-right corner of the canvas to fit the view, zoom in, or zoom out. You can also add **labels** to any step to make complex flows easier to read at a glance.

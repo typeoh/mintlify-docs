@@ -1,0 +1,279 @@
+---
+title: "Domain Configuration Reference for Rasa Assistants"
+sidebarTitle: "Domain"
+description: "Full reference for domain.yml — responses, slots, actions, forms, session config, and naming conventions for collect steps in CALM assistants."
+---
+
+The `domain.yml` file defines the universe your assistant operates in. It registers every response template your assistant can send, every slot it can remember, every custom action it can call, and the rules governing session lifecycle. Without a properly configured domain, Rasa cannot resolve action names, slot references, or response keys at runtime.
+
+<Note>
+If you are building a CALM assistant, you can also manage responses, slots, and custom actions in [Rasa Studio](https://rasa.com/docs/studio/intro/). Studio writes changes back to your domain files automatically.
+</Note>
+
+## Multiple Domain Files
+
+You can define the domain as a single `domain.yml` file or split it across multiple YAML files in a directory. Rasa merges all files automatically at training time:
+
+```bash
+rasa train --domain path/to/domain_directory/
+```
+
+Splitting the domain by feature area (for example, `domain/responses.yml`, `domain/slots.yml`) makes large projects easier to navigate and review.
+
+---
+
+## Responses
+
+Responses are templated messages your assistant sends to users. You define them under the `responses` key. Every response is also implicitly an action, so you can use it directly in a flow `action` step.
+
+### Text response
+
+```yaml
+responses:
+  utter_greet:
+    - text: "Hey there! How can I help you today?"
+```
+
+### Multiple variations (random selection)
+
+```yaml
+responses:
+  utter_greet:
+    - text: "Hey! How can I help?"
+    - text: "Hello! What can I do for you?"
+    - text: "Hi there! What brings you here?"
+```
+
+### Response with buttons
+
+```yaml
+responses:
+  utter_ask_transfer_confirm:
+    - text: "Would you like to confirm the transfer?"
+      buttons:
+        - title: "Yes, confirm"
+          payload: "/affirm"
+        - title: "No, cancel"
+          payload: "/deny"
+```
+
+### Response with an image
+
+```yaml
+responses:
+  utter_show_map:
+    - text: "Here's the location:"
+      image: "https://example.com/map.png"
+```
+
+### Naming convention for collect steps
+
+When a CALM flow uses a `collect` step, Rasa automatically calls the response named `utter_ask_<slot_name>` to prompt the user. For example, a collect step that fills a slot called `destination_city` will call:
+
+```yaml
+responses:
+  utter_ask_destination_city:
+    - text: "Which city are you traveling to?"
+```
+
+You must define this response in your domain for each slot your flows collect.
+
+---
+
+## Slots
+
+Slots are your assistant's key-value memory store. They persist information provided by users or gathered from external systems throughout a conversation.
+
+### Slot types
+
+```yaml
+slots:
+  # Text — stores any string value
+  user_name:
+    type: text
+    mappings:
+      - type: from_text
+
+  # Boolean — true/false
+  is_verified:
+    type: bool
+    mappings:
+      - type: from_intent
+        intent: affirm
+        value: true
+
+  # Float — numeric value
+  account_balance:
+    type: float
+    mappings:
+      - type: custom
+
+  # Categorical — one of a fixed set of values
+  subscription_tier:
+    type: categorical
+    values:
+      - basic
+      - premium
+      - enterprise
+    mappings:
+      - type: custom
+
+  # Any — stores any Python object (no featurization)
+  order_details:
+    type: any
+    mappings:
+      - type: custom
+
+  # List — stores a list of values
+  selected_items:
+    type: list
+    mappings:
+      - type: custom
+```
+
+### Slot mappings
+
+Mappings tell Rasa how a slot gets its value. Common mapping types:
+
+| Mapping type | When it applies |
+|---|---|
+| `from_text` | Stores the user's full message text |
+| `from_intent` | Sets a fixed `value` when a specific intent is detected |
+| `from_entity` | Fills the slot from a matched entity |
+| `from_llm` | Filled by the LLM command generator (CALM) |
+| `custom` | Filled by a custom action |
+
+Example using `from_llm` (CALM):
+
+```yaml
+slots:
+  destination_city:
+    type: text
+    mappings:
+      - type: from_llm
+```
+
+---
+
+## Actions
+
+All custom actions must be registered in the `actions` section of the domain. This tells Rasa's dialogue model that these action names are valid predictions.
+
+```yaml
+actions:
+  - action_check_balance
+  - action_transfer_funds
+  - validate_booking_form
+```
+
+### Selective domain
+
+If you have enabled `enable_selective_domain: true` in `endpoints.yml`, you can control which actions receive the full domain object. Annotate actions that need the domain with `{send_domain: True}`:
+
+```yaml
+actions:
+  - action_hello_world: {send_domain: True}   # receives the domain
+  - action_calculate_mass_of_sun              # does not receive the domain
+  - validate_my_form                          # receives the domain
+```
+
+<Note>
+Rasa [default actions](https://rasa.com/docs/reference/primitives/default-actions/) such as `action_listen` and `action_session_start` do not need to be listed — they are always available.
+</Note>
+
+---
+
+## Session Configuration
+
+A conversation session represents the full dialogue exchange between a user and your assistant. Sessions start when a user sends their first message, when they resume after a period of inactivity, or when `/session_start` is sent explicitly.
+
+Configure session behavior under the `session_config` key:
+
+```yaml
+session_config:
+  session_expiration_time: 60     # minutes of inactivity before a new session; 0 = never expire
+  carry_over_slots_to_new_session: true  # carry existing slot values into new sessions
+```
+
+### Parameters
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `session_expiration_time` | integer | `60` | Minutes of inactivity before a new session starts. Set to `0` for sessions that never expire. |
+| `carry_over_slots_to_new_session` | boolean | `true` | Whether to carry existing slot values forward into the new session. |
+
+<Note>
+Every conversation — including the very first message — triggers the default `action_session_start`. You can override this action to initialize slots from an external API or to send a proactive greeting. See [Customizing the session start action](https://rasa.com/docs/reference/primitives/default-actions/#customization).
+</Note>
+
+---
+
+## Complete domain.yml Example
+
+The following example shows a realistic domain for a simple banking assistant:
+
+```yaml
+version: "3.1"
+
+session_config:
+  session_expiration_time: 60
+  carry_over_slots_to_new_session: true
+
+responses:
+  utter_greet:
+    - text: "Hello! How can I help you with your account today?"
+
+  utter_ask_transfer_amount:
+    - text: "How much would you like to transfer?"
+
+  utter_ask_destination_account:
+    - text: "What is the destination account number?"
+
+  utter_ask_transfer_confirm:
+    - text: "Transfer {transfer_amount} to account {destination_account}. Confirm?"
+      buttons:
+        - title: "Confirm"
+          payload: "/affirm"
+        - title: "Cancel"
+          payload: "/deny"
+
+  utter_transfer_success:
+    - text: "Your transfer of {transfer_amount} was completed successfully."
+
+  utter_goodbye:
+    - text: "Goodbye! Have a great day."
+
+slots:
+  transfer_amount:
+    type: float
+    mappings:
+      - type: from_llm
+
+  destination_account:
+    type: text
+    mappings:
+      - type: from_llm
+
+  is_verified_user:
+    type: bool
+    mappings:
+      - type: custom
+
+actions:
+  - action_check_balance
+  - action_execute_transfer
+  - action_verify_user
+```
+
+---
+
+## Key Naming Conventions
+
+| Convention | Explanation |
+|---|---|
+| `utter_<name>` | Response templates callable as actions directly in flows |
+| `utter_ask_<slot_name>` | Response called automatically when a flow collects `<slot_name>` |
+| `action_<name>` | Custom action implemented in Python (must be registered) |
+| `validate_<form_name>` | Form validation action (must be registered) |
+
+Following these conventions ensures that CALM flows, NLU components, and the dialogue engine resolve names correctly without additional configuration.

@@ -1,0 +1,150 @@
+---
+title: "Custom Actions in Rasa Studio: Add Logic to Your Flows"
+sidebarTitle: "Custom Actions"
+description: "Connect Rasa Studio flows to Python custom actions running on an action server to call APIs, query databases, and set slots dynamically."
+---
+
+Custom actions let your assistant execute Python code as part of a conversation flow. This is how you connect Rasa to the outside world—calling APIs, querying databases, performing calculations, and returning dynamic data back to the conversation. Any task that goes beyond sending a fixed message can be handled by a custom action.
+
+## What Custom Actions Are in Studio
+
+In Rasa Studio, a custom action is a *declaration*—you give it a name and a description in the flow editor, but the actual code runs on a separate **action server** outside of Studio. Studio needs to know the action exists so it can include it in training; the action server receives calls from Rasa at runtime and executes the Python logic.
+
+This separation means you can keep your conversational design in Studio while your engineering team maintains the action server code independently.
+
+## Creating a Custom Action Declaration in Studio
+
+<Steps>
+  <Step title="Add a Custom Action step to your flow">
+    In the Flow Builder, click the **+** icon at the point in your flow where you want the action to run. Select **Custom Action** from the step menu.
+  </Step>
+  <Step title="Create the action">
+    Click the action dropdown and select **Create custom action**. A modal appears.
+  </Step>
+  <Step title="Name and describe the action">
+    - **Name:** Enter the exact name your Python class returns from the `name()` method. For example: `action_validate_sufficient_funds`. The name in Studio must match the implementation precisely.
+    - **Description:** Write a detailed, free-form description of what the action should do, which slots it reads, and what slot values it should return in which cases. This description is read by whoever implements the action server, so be thorough.
+    - Click **Save**.
+  </Step>
+</Steps>
+
+<Note>
+  Custom actions can also be used in Collect Information steps to dynamically ask questions. In that case the action name must follow the pattern `action_ask_{slot_name}` and be added to your domain file.
+</Note>
+
+## Connecting Studio to an Action Server
+
+After creating the action declaration, you need to tell Studio where the action server is running so training and testing work correctly.
+
+1. Navigate to **Assistant Settings** in the left-hand menu.
+2. Click the **Configuration** tab.
+3. Find the **Action Endpoint** field and enter the full URL of your action server webhook:
+   ```
+   https://your-action-server.example.com/webhook
+   ```
+4. Save your configuration.
+
+## Local Testing with ngrok
+
+During development, your action server runs on your local machine. You can expose it to Studio using **ngrok**, a reverse proxy tool that creates a public URL pointing to your localhost.
+
+<Steps>
+  <Step title="Start the Rasa action server">
+    From your Rasa project directory, run:
+
+    ```bash
+    rasa run actions
+    ```
+
+    By default, the action server listens on port `5055`.
+  </Step>
+  <Step title="Expose the server with ngrok">
+    In a separate terminal:
+
+    ```bash
+    ngrok http 5055
+    ```
+
+    ngrok prints a public HTTPS URL, for example:
+    ```
+    https://abc123.ngrok.io -> http://localhost:5055
+    ```
+  </Step>
+  <Step title="Add the ngrok URL to Studio">
+    Copy the ngrok HTTPS URL and append `/webhook`. In Studio, go to **Assistant Settings → Configuration → Action Endpoint** and enter:
+
+    ```
+    https://abc123.ngrok.io/webhook
+    ```
+
+    Save the configuration, then train and test your assistant.
+  </Step>
+</Steps>
+
+<Warning>
+  ngrok URLs are temporary and change every time you restart ngrok (unless you have a paid plan with a reserved domain). Update the Action Endpoint in Studio each time you restart ngrok.
+</Warning>
+
+## Writing a Custom Action in Python
+
+Custom actions are Python classes that extend `rasa_sdk.Action`. You implement two methods:
+
+- `name()` — returns the action name string (must match what you declared in Studio)
+- `run()` — contains your business logic; returns a list of events
+
+Here is a complete example that validates whether a user has sufficient funds for a transfer:
+
+```python
+from typing import Any, Text, Dict, List
+from rasa_sdk import Action, Tracker
+from rasa_sdk.executor import CollectingDispatcher
+from rasa_sdk.events import SlotSet
+
+class ActionValidateSufficientFunds(Action):
+    def name(self) -> Text:
+        return "action_validate_sufficient_funds"
+
+    def run(
+        self,
+        dispatcher: CollectingDispatcher,
+        tracker: Tracker,
+        domain: Dict[Text, Any],
+    ) -> List[Dict[Text, Any]]:
+        # In production, retrieve the balance from your banking API or database.
+        # This example uses a hard-coded value for illustration.
+        balance = 1000.0
+
+        transfer_amount = tracker.get_slot("amount")
+        has_sufficient_funds = transfer_amount <= balance
+
+        return [SlotSet("has_sufficient_funds", has_sufficient_funds)]
+```
+
+Place this code in `actions/actions.py` within your Rasa project. The `SlotSet` event tells Rasa to store the result in the `has_sufficient_funds` slot, which your flow's Logic step can then check.
+
+## Using the Action Result in a Flow
+
+After the Custom Action step runs and sets a slot, use a **Logic** step to branch on the result:
+
+1. Add a **Logic** step immediately after the Custom Action step.
+2. Click the first branch and set the condition: `has_sufficient_funds` **is** `True`.
+3. Add the success path (for example, proceed to confirmation) after the first branch.
+4. Add the failure path (for example, show an insufficient-funds message) after the **Else** branch.
+
+## Managing Custom Actions
+
+To edit or delete an existing action declaration:
+
+1. Open a flow that uses the action and click the Custom Action step.
+2. Click the action dropdown and select **Manage custom actions**.
+3. Edit the name or description, or delete the action.
+
+<Warning>
+  If you edit or delete a custom action declaration, the change affects every flow and step that uses that action. Review all affected flows before making changes.
+</Warning>
+
+## Deploying Your Action Server to Production
+
+For production use, deploy your action server as a container in your cloud environment (AWS, GCP, Azure, or on-premises Kubernetes). Replace the ngrok URL in **Assistant Settings → Configuration → Action Endpoint** with the stable public URL of your deployed action server.
+
+For full documentation on running and scaling the action server, see the [Rasa Action Server reference](https://rasa.com/docs/action-server/).

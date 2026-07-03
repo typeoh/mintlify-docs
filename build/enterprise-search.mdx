@@ -1,0 +1,155 @@
+---
+title: "Enterprise Search: Add RAG Knowledge to Your Assistant"
+sidebarTitle: "Enterprise Search"
+description: "Use Retrieval-Augmented Generation (RAG) to answer open-ended questions from a knowledge base. Configure EnterpriseSearchPolicy with FAISS, Milvus, or Qdrant."
+---
+
+Enterprise Search gives your Rasa assistant the ability to answer open-ended questions by drawing on a knowledge base — product documentation, FAQs, policy documents, or any corpus you provide. Instead of hard-coding every possible answer as a flow, you ingest documents into a vector store, and at runtime the assistant retrieves the most relevant chunks and asks an LLM to generate a grounded response. This approach is called Retrieval-Augmented Generation (RAG).
+
+## How it works
+
+When a user asks an informational question, Rasa's command generator detects that no specific flow matches the intent and routes control to the `EnterpriseSearchPolicy` via the built-in `pattern_search` pattern. The policy then:
+
+<Steps>
+  <Step title="Embed the query">
+    The user's message is converted into a vector using the configured embedding model.
+  </Step>
+  <Step title="Search the vector store">
+    The embedding is used to perform a similarity search against your knowledge base. The policy retrieves the most relevant document chunks.
+  </Step>
+  <Step title="Generate a grounded answer">
+    The retrieved chunks are inserted into a prompt alongside the user's question. An LLM generates a final answer that stays grounded in the retrieved content.
+  </Step>
+  <Step title="Return the response">
+    The answer is delivered to the user. If no relevant documents are found above the similarity threshold, the policy can fall back gracefully rather than hallucinating.
+  </Step>
+</Steps>
+
+## Configuration
+
+### Enable the policy in config.yml
+
+You need to use `SearchReadyLLMCommandGenerator` in your pipeline — it is specifically designed to recognize knowledge-seeking queries and trigger the search pattern.
+
+```yaml
+# config.yml
+recipe: default.v1
+language: en
+
+pipeline:
+  - name: SearchReadyLLMCommandGenerator
+    llm:
+      model_group: openai_llm
+    flow_retrieval:
+      embeddings:
+        model_group: embedding_model
+
+policies:
+  - name: FlowPolicy
+  - name: EnterpriseSearchPolicy
+    vector_store:
+      type: "faiss"
+      threshold: 0.0
+    llm:
+      model_group: openai_llm
+    embeddings:
+      model_group: embedding_model
+```
+
+```yaml
+# endpoints.yml
+model_groups:
+  - id: openai_llm
+    models:
+      - provider: openai
+        model: gpt-4o-mini
+        api_key: ${OPENAI_API_KEY}
+  - id: embedding_model
+    models:
+      - provider: openai
+        model: text-embedding-3-large
+        api_key: ${OPENAI_API_KEY}
+```
+
+<Note>
+  The same embedding model must be used both during document ingestion and at
+  query time. Using different models will produce incompatible vector spaces and
+  degrade retrieval quality.
+</Note>
+
+## Connecting a vector store
+
+Rasa supports three built-in vector store backends:
+
+<CardGroup cols={3}>
+  <Card title="FAISS" icon="database">
+    In-memory store, ideal for prototyping and small corpora. No external service required. Set `type: faiss`.
+  </Card>
+  <Card title="Milvus" icon="server">
+    Open-source distributed vector database for production-scale deployments. Set `type: milvus` and add connection details to `endpoints.yml`.
+  </Card>
+  <Card title="Qdrant" icon="magnifying-glass">
+    Cloud-native vector search engine with filtering support. Set `type: qdrant` and configure host, port, and collection.
+  </Card>
+</CardGroup>
+
+Example `endpoints.yml` for Qdrant:
+
+```yaml
+# endpoints.yml
+vector_store:
+  type: qdrant
+  host: localhost
+  port: 6333
+  collection: my_knowledge_base
+```
+
+## Ingesting documents
+
+Document ingestion is your responsibility — Rasa provides the retrieval and generation layer, not an out-of-the-box ingestion pipeline. At a high level, you:
+
+1. Chunk your source documents (PDFs, markdown files, HTML pages, etc.) into passages of a few hundred tokens each.
+2. Embed each chunk using the same embedding model you configured in `EnterpriseSearchPolicy`.
+3. Store the embeddings and their metadata in your chosen vector store.
+
+Because ingestion happens outside Rasa, you can use any document processing library and update the knowledge base without retraining the assistant model.
+
+## When to use Enterprise Search vs. flows
+
+<Tabs>
+  <Tab title="Use Enterprise Search when...">
+    - Users ask open-ended or factual questions with unpredictable phrasing.
+    - Your knowledge base is large, frequently updated, or managed by a separate team.
+    - You want to avoid writing a new flow every time documentation changes.
+    - Multiple lines of business share a single knowledge backbone and need consistent answers.
+    - You need to handle "long-tail" queries that you didn't explicitly anticipate at build time.
+  </Tab>
+  <Tab title="Use flows when...">
+    - The interaction follows a defined sequence of steps (for example, collecting a form or verifying identity).
+    - Business logic determines the path, not free-form user language.
+    - You need precise control over every turn of the conversation.
+    - Regulatory or compliance requirements demand a specific, auditable script.
+  </Tab>
+</Tabs>
+
+A hybrid approach usually works best. Transactional requests ("Cancel my subscription") are handled by flows on the dialogue stack, while informational requests ("How do I export my data?") trigger a retrieval call. If a user asks an informational question mid-flow, CALM pushes the search pattern onto the dialogue stack, answers it, and then resumes the original flow.
+
+## Custom information retrievers
+
+If you use a proprietary search engine or need custom re-ranking logic, you can replace the built-in retrieval step with your own class:
+
+```yaml
+# config.yml
+policies:
+  - name: EnterpriseSearchPolicy
+    vector_store:
+      type: "my_custom_module.MyRetriever"
+```
+
+Your class inherits from Rasa's `InformationRetrieval` interface and implements `connect` and `search` methods. This gives you full control over how documents are found and scored while the rest of the Enterprise Search pipeline (prompt construction, LLM call, response delivery) remains unchanged.
+
+<Tip>
+  Start with FAISS during development so you can iterate quickly without running
+  an external service. Switch to Milvus or Qdrant when you move to production
+  and need persistence across restarts.
+</Tip>

@@ -1,0 +1,182 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "name": "Rasa",
+  "theme": "maple",
+  "logo": {
+    "light": "https://media.brand.dev/32d7762a-1cec-45ef-8ecb-e4d4771767bb.svg",
+    "dark": "https://media.brand.dev/32d7762a-1cec-45ef-8ecb-e4d4771767bb.svg"
+  },
+  "favicon": "https://media.brand.dev/662e27e6-335a-4217-b9d6-599d0abc2304.jpg",
+  "colors": {
+    "primary": "#040404",
+    "light": "#848486",
+    "dark": "#d4d4d4"
+  },
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/RasaHQ/rasa"
+    }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Get Started",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "get-started/introduction",
+              "get-started/platform-overview",
+              "get-started/use-cases"
+            ]
+          },
+          {
+            "group": "Quick Start",
+            "pages": [
+              "get-started/quickstart",
+              "get-started/licensing",
+              "get-started/installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/calm",
+              "concepts/flows",
+              "concepts/slots",
+              "concepts/actions",
+              "concepts/conversation-patterns"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Build",
+        "groups": [
+          {
+            "group": "Writing Flows",
+            "pages": [
+              "build/writing-flows",
+              "build/flow-steps",
+              "build/responses",
+              "build/branching-logic"
+            ]
+          },
+          {
+            "group": "Custom Actions",
+            "pages": [
+              "build/custom-actions",
+              "build/action-server",
+              "build/integrating-external-agents"
+            ]
+          },
+          {
+            "group": "Integrations",
+            "pages": [
+              "build/llm-configuration",
+              "build/channels",
+              "build/enterprise-search",
+              "build/mcp-integration"
+            ]
+          },
+          {
+            "group": "Customization",
+            "pages": [
+              "build/assistant-memory",
+              "build/voice-assistants",
+              "build/translating-assistant"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Test & Deploy",
+        "groups": [
+          {
+            "group": "Testing",
+            "pages": [
+              "test-deploy/testing-overview",
+              "test-deploy/e2e-tests",
+              "test-deploy/inspector"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "test-deploy/deploy-overview",
+              "test-deploy/deploy-docker",
+              "test-deploy/deploy-kubernetes",
+              "test-deploy/ci-cd"
+            ]
+          },
+          {
+            "group": "Monitoring",
+            "pages": [
+              "test-deploy/analytics",
+              "test-deploy/tracing",
+              "test-deploy/conversation-review"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Rasa Studio",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "studio/intro",
+              "studio/tutorial",
+              "studio/installation"
+            ]
+          },
+          {
+            "group": "Building",
+            "pages": [
+              "studio/flow-builder",
+              "studio/content-management",
+              "studio/custom-actions",
+              "studio/training-testing"
+            ]
+          },
+          {
+            "group": "Analysis & Admin",
+            "pages": [
+              "studio/analytics",
+              "studio/conversation-review",
+              "studio/managing-users"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "CLI",
+            "pages": [
+              "reference/cli"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "reference/config-overview",
+              "reference/domain",
+              "reference/llm-providers",
+              "reference/environment-variables"
+            ]
+          },
+          {
+            "group": "Changelog",
+            "pages": [
+              "reference/rasa-pro-changelog",
+              "reference/compatibility-matrix"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

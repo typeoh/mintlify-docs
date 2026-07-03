@@ -1,0 +1,287 @@
+---
+title: "Deploy Rasa Pro on Kubernetes with Helm"
+sidebarTitle: "Kubernetes"
+description: "Deploy Rasa Pro to any Kubernetes cluster using the official Helm chart. Configure model storage, action server, analytics, and environment secrets."
+---
+
+Kubernetes gives you a production-grade foundation for running Rasa Pro at scale. With the official Rasa Pro Helm chart you can deploy and update your assistant declaratively, scale horizontally to handle traffic spikes, and run all supporting services—the action server, Rasa Pro Services for analytics, and model storage—as coordinated workloads in the same cluster. This guide walks you through everything from cluster prerequisites to enabling analytics with Kafka.
+
+## Prerequisites
+
+Before you start, make sure you have the following ready:
+
+1. **A Kubernetes or OpenShift cluster** — AWS EKS, Azure AKS, GCP GKE, DigitalOcean, and on-premises clusters are all supported. Verify connectivity with your cluster before proceeding.
+2. **Helm CLI v3.5 or newer** — The Rasa Pro Helm chart requires Helm 3.5+. Check your version:
+   ```bash
+   helm version --short
+   ```
+3. **A valid Rasa Pro license** — You will encode it as a Kubernetes secret and reference it in your deployment.
+4. **(Optional) A cloud storage bucket** — For loading trained models from AWS S3, GCS, or Azure Blob Storage.
+5. **(Optional) A Kafka cluster and data warehouse** — Required if you want to deploy Rasa Pro Services for analytics.
+
+## Step-by-step deployment
+
+<Steps>
+  <Step title="Connect to your cluster">
+    Confirm `kubectl` is connected to your target cluster:
+
+    ```bash
+    kubectl version
+    ```
+
+    Create a dedicated namespace for your Rasa deployment to isolate it from other workloads:
+
+    ```bash
+    kubectl create namespace rasa
+    kubectl config set-context --current --namespace=rasa
+    ```
+  </Step>
+
+  <Step title="Pull the Helm chart">
+    Download the Rasa Pro Helm chart from the public Artifact Registry:
+
+    ```bash
+    helm pull oci://europe-west3-docker.pkg.dev/rasa-releases/helm-charts/rasa
+    ```
+
+    This downloads a file named `rasa-<version>.tgz` to your current directory.
+  </Step>
+
+  <Step title="Create a secrets.yml">
+    Create a Kubernetes Secret containing your Rasa license and any other sensitive values. Base64-encode each secret value before including it.
+
+    ```yaml
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: rasa-secrets
+    type: Opaque
+    data:
+      rasaProLicense: <BASE64ENCODED_LICENSE>
+      authToken: <BASE64ENCODED_VALUE>
+      jwtSecret: <BASE64ENCODED_VALUE>
+    ```
+
+    Apply the secret to your cluster:
+
+    ```bash
+    kubectl apply -f secrets.yml
+    ```
+  </Step>
+
+  <Step title="Create a values.yml">
+    Create a `values.yml` file that configures the Rasa Pro container. At minimum, specify the image repository and tag:
+
+    ```yaml
+    # Rasa Pro container
+    rasa:
+      image:
+        repository: "europe-west3-docker.pkg.dev/rasa-releases/rasa-pro/rasa-pro"
+        tag: "3.8.0-latest"
+
+    # Disable Rasa Pro Services if not needed
+    rasaProServices:
+      enabled: false
+    ```
+  </Step>
+
+  <Step title="Install with Helm">
+    Deploy Rasa Pro to your cluster:
+
+    ```bash
+    helm install \
+      --namespace rasa \
+      --values values.yml \
+      my-rasa-release \
+      rasa-<version>.tgz
+    ```
+
+    Replace `my-rasa-release` with a name for your Helm release and `rasa-<version>.tgz` with the file you downloaded.
+  </Step>
+</Steps>
+
+## Model storage with cloud buckets
+
+For production deployments, store your trained model in cloud storage so Rasa can load it at pod startup. The following example configures a GCS bucket mount using GKE Workload Identity:
+
+```yaml
+rasa:
+  endpoints:
+    models:
+      enabled: false
+  volumes:
+    - csi:
+        driver: gcsfuse.csi.storage.gke.io
+        readOnly: true
+        volumeAttributes:
+          bucketName: my-model-bucket
+          mountOptions: implicit-dirs,only-dir=models
+      name: rasa-models
+  volumeMounts:
+    - name: rasa-models
+      mountPath: /app/models
+      readOnly: true
+  serviceAccount:
+    create: true
+    annotations:
+      iam.gke.io/gcp-service-account: rasa-sa@my-project.iam.gserviceaccount.com
+    name: "rasa-pro-sa"
+  podAnnotations:
+    gke-gcsfuse/volumes: "true"
+```
+
+For AWS S3 and Azure Blob Storage, refer to the [environment variables reference](https://rasa.com/docs/reference/config/environment-variables/) for the relevant configuration keys.
+
+## Deploying the action server
+
+If your assistant uses custom actions, build an action server image and deploy it alongside Rasa:
+
+**Build your action server image:**
+
+```dockerfile
+FROM rasa/rasa-sdk:latest
+WORKDIR /app
+# Optional: install custom dependencies
+# COPY actions/requirements-actions.txt ./
+# RUN pip install -r requirements-actions.txt
+COPY ./actions /app/actions
+USER 1001
+```
+
+Push the image to your container registry, then reference it in `values.yml`:
+
+```yaml
+rasa:
+  endpoints:
+    actionEndpoint:
+      url: http://action-server:5055/webhook
+
+actionServer:
+  enabled: true
+  image:
+    repository: my-docker-username/my-action-server
+    tag: v1.0.0
+```
+
+Apply the update:
+
+```bash
+helm upgrade \
+  --namespace rasa \
+  --values values.yml \
+  my-rasa-release \
+  rasa-<version>.tgz
+```
+
+## Rasa Pro Services for analytics
+
+Rasa Pro Services is an optional component that streams conversation events from Kafka to your data warehouse, powering the analytics pipeline. To enable it, you need a running Kafka cluster and a supported database (PostgreSQL, Redshift, BigQuery, or Snowflake).
+
+First, enable the event broker in your Rasa configuration:
+
+```yaml
+rasa:
+  settings:
+    endpoints:
+      eventBroker:
+        enabled: true
+        type: kafka
+```
+
+Then enable and configure Rasa Pro Services:
+
+```yaml
+rasaProServices:
+  enabled: true
+  image:
+    repository: "europe-west3-docker.pkg.dev/rasa-releases/rasa-pro/rasa-pro-services"
+    tag: "3.6.1-latest"
+  loggingLevel: "INFO"
+  database:
+    url: "postgresql://user:password@hostname:5432/analytics"
+  kafka:
+    brokerAddress: "kafka-broker:9092"
+    topic: "rasa-core-events"
+    dlqTopic: "rasa-analytics-dlq"
+    securityProtocol: "SASL_SSL"
+    saslMechanism: "PLAIN"
+    saslUsername: "kafka-user"
+    saslPassword:
+      secretName: "rasa-secrets"
+      secretKey: "kafkaSslPassword"
+    consumerId: "rasa-analytics-group"
+```
+
+<Note>
+  Rasa Pro Services configuration moved to structured `database` and `kafka` blocks in Helm chart version 1.3.0. If you are upgrading from an older chart, migrate any individual environment variable settings to these blocks.
+</Note>
+
+## Adding environment variables
+
+Pass additional environment variables to any Rasa container through `values.yml`:
+
+```yaml
+rasa:
+  additionalEnv:
+    - name: OPENAI_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: rasa-secrets
+          key: openaiApiKey
+    - name: RASA_TELEMETRY_ENABLED
+      value: "false"
+```
+
+For ConfigMaps or Secrets you want to inject wholesale:
+
+```yaml
+rasa:
+  envFrom:
+    - secretRef:
+        name: rasa-secrets
+    - configMapRef:
+        name: rasa-config
+```
+
+## Upgrading and removing deployments
+
+**Upgrade** after changing `values.yml`:
+
+```bash
+helm upgrade \
+  --namespace rasa \
+  --values values.yml \
+  my-rasa-release \
+  rasa-<version>.tgz
+```
+
+**Remove** the deployment:
+
+```bash
+helm delete my-rasa-release
+```
+
+<Tip>
+  Store your `values.yml` and `secrets.yml` in version control (with secrets encrypted using a tool like `sops` or Sealed Secrets). This makes rollbacks and environment reproduction straightforward.
+</Tip>
+
+## Verifying your deployment
+
+Check that all pods are running:
+
+```bash
+kubectl get pods --namespace rasa
+```
+
+View logs for the Rasa pod:
+
+```bash
+kubectl logs -l app=rasa --namespace rasa --follow
+```
+
+If you deployed Rasa Pro Services, confirm it is healthy by checking its `/healthcheck` endpoint through a port-forward:
+
+```bash
+kubectl port-forward svc/rasa-pro-services 8000:8000 --namespace rasa
+curl http://localhost:8000/healthcheck
+```

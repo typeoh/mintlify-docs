@@ -1,0 +1,314 @@
+---
+title: "Configuring LLM Providers in Rasa: OpenAI, Azure, and More"
+sidebarTitle: "LLM Configuration"
+description: "Connect any LLM provider to your Rasa assistant using LiteLLM model groups. Configure OpenAI, Azure, Bedrock, Mistral, Gemini, and self-hosted models."
+---
+
+Rasa uses [LiteLLM](https://litellm.vercel.app/) under the hood to communicate with LLM providers, which means any provider LiteLLM supports is also available in Rasa. You declare your models once in `endpoints.yml` using **model groups**, then reference those groups by ID in `config.yml`. This separation keeps your secrets and model choices out of your pipeline configuration and makes it easy to swap providers without touching your flows.
+
+## How model groups work
+
+A model group is a named collection of one or more model deployments. Components like `CompactLLMCommandGenerator`, `EnterpriseSearchPolicy`, and `ContextualResponseRephraser` each accept a `model_group` key that points to one of these groups. Defining multiple deployments inside a group enables automatic load-balancing and failover via the LiteLLM router.
+
+### Minimal example
+
+```yaml
+# endpoints.yml
+model_groups:
+  - id: default
+    models:
+      - provider: openai
+        model: gpt-4o
+        api_key: ${OPENAI_API_KEY}
+```
+
+```yaml
+# config.yml
+pipeline:
+  - name: CompactLLMCommandGenerator
+    llm:
+      model_group: default
+```
+
+<Note>
+  Always reference secrets using the `${}` syntax rather than pasting values
+  directly into `endpoints.yml`. Rasa resolves these at startup from your
+  environment, keeping credentials out of version control.
+</Note>
+
+## Supported providers
+
+The table below lists the providers Rasa explicitly tests. Set the `provider` field to the value shown, export the API key variable, and you are ready to go.
+
+| Provider | `provider` value | API key variable |
+|---|---|---|
+| OpenAI | `openai` | `OPENAI_API_KEY` |
+| Azure OpenAI | `azure` | `AZURE_API_KEY` |
+| Amazon Bedrock | `bedrock` | `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` |
+| Mistral | `mistral` | `MISTRAL_API_KEY` |
+| Google Gemini | `gemini` | `GEMINI_API_KEY` |
+| HuggingFace Inference | `huggingface` | `HUGGINGFACE_API_KEY` |
+| vLLM / Ollama (self-hosted) | `self-hosted` / `ollama` | _(optional)_ |
+| Anthropic | `anthropic` | `ANTHROPIC_API_KEY` |
+| Cohere | `cohere` | `COHERE_API_KEY` |
+| Together AI | `together_ai` | `TOGETHERAI_API_KEY` |
+| Groq | `groq` | `GROQ_API_KEY` |
+
+## Provider configuration
+
+<Tabs>
+  <Tab title="OpenAI">
+    OpenAI is the default provider. Create an API key at [platform.openai.com](https://platform.openai.com/account/api-keys) and export it:
+
+    ```bash
+    export OPENAI_API_KEY=sk-...
+    ```
+
+    ```yaml
+    # endpoints.yml
+    model_groups:
+      - id: openai_llm
+        models:
+          - provider: openai
+            model: gpt-4o
+            api_key: ${OPENAI_API_KEY}
+    ```
+
+    <Tip>
+      OpenAI does not use your data to train their models. See their [Enterprise
+      Privacy page](https://openai.com/enterprise-privacy/) for details.
+    </Tip>
+  </Tab>
+
+  <Tab title="Azure OpenAI">
+    Azure requires four additional parameters beyond the standard `provider` and `model` fields.
+
+    ```yaml
+    # endpoints.yml
+    model_groups:
+      - id: azure_llm
+        models:
+          - provider: azure
+            deployment: ${AZURE_DEPLOYMENT_NAME}
+            api_base: ${AZURE_API_BASE}
+            api_version: "2025-02-01-preview"
+            api_key: ${AZURE_API_KEY}
+            timeout: 7
+    ```
+
+    ```yaml
+    # config.yml
+    pipeline:
+      - name: CompactLLMCommandGenerator
+        llm:
+          model_group: azure_llm
+    ```
+
+    <Note>
+      If you encounter timeout errors, increase the `timeout` value to match
+      your Azure instance's response time.
+    </Note>
+  </Tab>
+
+  <Tab title="Amazon Bedrock">
+    Bedrock supports credentials via environment variables, inline configuration, or an attached IAM role.
+
+    ```yaml
+    # endpoints.yml
+    model_groups:
+      - id: bedrock_llm
+        models:
+          - provider: bedrock
+            model: anthropic.claude-instant-v1
+            aws_access_key_id: ${AWS_ACCESS_KEY_ID}
+            aws_secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+            aws_region_name: us-east-1
+    ```
+
+    Install `boto3>=1.28.57` before running Rasa with Bedrock. You also need to enable the model in your AWS Bedrock console and grant `bedrock:InvokeModel` permissions to your IAM role or user.
+  </Tab>
+
+  <Tab title="Mistral">
+    ```yaml
+    # endpoints.yml
+    model_groups:
+      - id: mistral_llm
+        models:
+          - provider: mistral
+            model: mistral-large-latest
+            api_key: ${MISTRAL_API_KEY}
+    ```
+  </Tab>
+
+  <Tab title="Gemini">
+    Get an API key from [aistudio.google.com](https://aistudio.google.com/) and install `google-generativeai`:
+
+    ```yaml
+    # endpoints.yml
+    model_groups:
+      - id: gemini_llm
+        models:
+          - provider: gemini
+            model: gemini-pro
+            api_key: ${GEMINI_API_KEY}
+    ```
+  </Tab>
+
+  <Tab title="Self-hosted (vLLM / Ollama)">
+    Any OpenAI-compatible model server works with the `self-hosted` or `ollama` provider. Point `api_base` at your running server:
+
+    ```yaml
+    # endpoints.yml (vLLM)
+    model_groups:
+      - id: self_hosted_llm
+        models:
+          - provider: self-hosted
+            model: meta-llama/CodeLlama-7b-Instruct-hf
+            api_base: "https://my-endpoint/v1"
+    ```
+
+    ```yaml
+    # endpoints.yml (Ollama)
+    model_groups:
+      - id: ollama_llm
+        models:
+          - provider: ollama
+            model: llama3.1
+            api_base: "http://localhost:11434"
+    ```
+
+    The `model` value must exactly match the name you used when starting the server (e.g., `vllm serve meta-llama/...`).
+  </Tab>
+</Tabs>
+
+## Using multiple model groups
+
+You can define as many model groups as you need and assign different groups to different components. This lets you use a cheaper, faster model for routing decisions and a more capable model for generation.
+
+```yaml
+# endpoints.yml
+model_groups:
+  - id: fast_model
+    models:
+      - provider: openai
+        model: gpt-4o-mini
+        api_key: ${OPENAI_API_KEY}
+  - id: smart_model
+    models:
+      - provider: openai
+        model: gpt-4o
+        api_key: ${OPENAI_API_KEY}
+```
+
+```yaml
+# config.yml
+pipeline:
+  - name: LLMBasedRouter
+    llm:
+      model_group: fast_model
+  - name: CompactLLMCommandGenerator
+    llm:
+      model_group: smart_model
+```
+
+## Embedding models
+
+Components that use vector search—like `EnterpriseSearchPolicy` and flow retrieval—need an embedding model. Configure it under the `embeddings` key using the same `model_group` pattern:
+
+```yaml
+# config.yml
+pipeline:
+  - name: CompactLLMCommandGenerator
+    llm:
+      model_group: openai_llm
+    flow_retrieval:
+      embeddings:
+        model_group: embedding_model
+```
+
+```yaml
+# endpoints.yml
+model_groups:
+  - id: openai_llm
+    models:
+      - provider: openai
+        model: gpt-4o
+        api_key: ${OPENAI_API_KEY}
+  - id: embedding_model
+    models:
+      - provider: openai
+        model: text-embedding-3-large
+        api_key: ${OPENAI_API_KEY}
+```
+
+You can also run embedding models in-memory using HuggingFace's sentence-transformers library, which avoids a network call entirely:
+
+```yaml
+# endpoints.yml
+model_groups:
+  - id: local_embeddings
+    models:
+      - provider: huggingface
+        model: BAAI/bge-small-en-v1.5
+        model_kwargs:
+          device: "cpu"
+        encode_kwargs:
+          normalize_embeddings: true
+```
+
+## Proxy and SSL configuration
+
+<AccordionGroup>
+  <Accordion title="HTTP/HTTPS proxy">
+    Route all LLM requests through a proxy by setting the standard environment variables:
+
+    ```bash
+    export HTTP_PROXY="http://your-proxy-url:port"
+    export HTTPS_PROXY="https://your-proxy-url:port"
+    ```
+
+    Alternatively, set `api_base` in your model configuration to point directly at the proxy URL.
+  </Accordion>
+
+  <Accordion title="Self-signed SSL certificates">
+    If your environment uses TLS interception with a custom certificate authority, tell Rasa where to find the certificate bundle:
+
+    ```bash
+    export RASA_CA_BUNDLE="path/to/your/certificate.pem"
+    ```
+
+    <Warning>
+      The older `REQUESTS_CA_BUNDLE` variable is deprecated. Use
+      `RASA_CA_BUNDLE` to ensure compatibility with future Rasa versions.
+    </Warning>
+  </Accordion>
+
+  <Accordion title="LLM health check">
+    Validate your LLM connections before serving traffic by setting:
+
+    ```bash
+    export LLM_API_HEALTH_CHECK=true
+    ```
+
+    When enabled, Rasa makes a test API request to every configured deployment at startup and reports any failures immediately.
+  </Accordion>
+</AccordionGroup>
+
+## Recommended models
+
+The table below reflects the models Rasa actively tests with each component. As new models are released, Rasa evaluates and updates these recommendations.
+
+| Component | Supported providers | Recommended model |
+|---|---|---|
+| `CompactLLMCommandGenerator`, `SearchReadyLLMCommandGenerator` | OpenAI, Azure, Anthropic, Bedrock | `gpt-4o` |
+| `LLMBasedRouter` | OpenAI, Azure | `gpt-4o-mini` |
+| `ContextualResponseRephraser` | OpenAI, Azure | `gpt-4o` |
+| `EnterpriseSearchPolicy` (generative) | OpenAI, Azure | `gpt-4o-mini` |
+| `EnterpriseSearchPolicy` (embeddings) | OpenAI | `text-embedding-3-large` |
+
+<Tip>
+  If you switch from one provider to another, review any inference-time
+  parameters like `temperature`. Each provider uses different defaults, and
+  Rasa does not carry them over automatically when you change the `provider`
+  field.
+</Tip>

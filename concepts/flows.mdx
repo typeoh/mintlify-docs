@@ -1,0 +1,234 @@
+---
+title: "Flows: Defining Your Assistant's Business Logic in Rasa"
+sidebarTitle: "Flows"
+description: "Flows are YAML sequences of steps that define your assistant's business logic for completing user goals, without mapping every possible conversation path."
+---
+
+Flows are the core building block of every CALM assistant. Each flow is a YAML-defined sequence of steps that guides a conversation toward completing a specific task — collecting information, calling backend services, or branching based on what the user provides. Unlike traditional dialogue trees, a flow only defines the logic your assistant follows, not every possible path a conversation can take. This makes flows simpler to write, easier to maintain, and straightforward to debug.
+
+## Your First Flow
+
+The simplest possible flow has a description and a single action step:
+
+```yaml flows.yml
+flows:
+  hello_world:
+    description: A simple flow that greets the user
+    steps:
+      - action: utter_greet
+```
+
+When CALM's dialogue understanding component sees a user message that matches this flow's intent, it issues a `StartFlow("hello_world")` command and the dialogue manager executes the steps in order.
+
+<Note>
+  The `description` field is not just documentation — the LLM reads it to decide when to start this flow. Write descriptions that clearly explain what the user is trying to accomplish, not what the flow does technically.
+</Note>
+
+## Flow Properties
+
+Every flow supports the following properties:
+
+```yaml flows.yml
+flows:
+  a_flow:                              # required: unique flow ID
+    name: "A flow"                     # optional: human-readable display name
+    description: "required description of what the flow does for the user"
+    always_include_in_prompt: false    # optional: always show this flow to the LLM
+    run_pattern_completed: true        # optional: run completion pattern when flow ends
+    if: "condition"                    # optional: flow guard — only start if condition is true
+    nlu_trigger:                       # optional: NLU intents that can start this flow
+      - intent: "starting_flow_intent"
+    persisted_slots: []                # optional: slots to keep after the flow ends
+    steps: []                          # required: list of steps
+```
+
+### Property Reference
+
+<Accordion title="id (required)">
+  The flow ID is the YAML key directly under `flows:`. It must be unique across all your flows. It may contain alphanumeric characters, underscores, and hyphens — but cannot start with a hyphen.
+</Accordion>
+
+<Accordion title="description (required)">
+  A plain-language summary of what this flow accomplishes for the user. CALM's dialogue understanding component uses this description to decide when to start the flow. Clear, user-focused descriptions improve routing accuracy. For example, prefer "Helps the user send money to a contact" over "Executes a money transfer transaction."
+</Accordion>
+
+<Accordion title="steps (required)">
+  An ordered list of steps that the dialogue manager executes. Step types include `action`, `collect`, `set_slots`, `link`, `call`, and conditional branching with `next`. See [Flow Steps](/build/flow-steps) for the full reference.
+</Accordion>
+
+<Accordion title="name (optional)">
+  A human-readable name for the flow. Used in Rasa Studio and in conversation pattern messages like "Stopping {name}."
+</Accordion>
+
+<Accordion title="always_include_in_prompt (optional)">
+  When set to `true` and the flow guard (`if` condition) evaluates to `true`, this flow is always included in the LLM's context prompt — even when the retrieval mechanism might otherwise exclude it. Defaults to `false`.
+</Accordion>
+
+<Accordion title="nlu_trigger (optional)">
+  A list of NLU intents that can start this flow. Use this for the hybrid approach when you want a specific NLU classifier to trigger a flow rather than the LLM command generator.
+</Accordion>
+
+<Accordion title="if (flow guard, optional)">
+  A condition that must evaluate to `true` for this flow to be available to the LLM. Use flow guards to restrict flows to specific users, channels, or conversation states — for example, only showing a "transfer money" flow to logged-in users.
+</Accordion>
+
+<Accordion title="persisted_slots (optional)">
+  By default, slots set in `collect` and `set_slots` steps are cleared when the flow ends. Add slot names to `persisted_slots` to retain their values across flows. Note: slots set in custom actions are always persistent and should not be listed here.
+</Accordion>
+
+## Step Types at a Glance
+
+| Step Type | What it does |
+|---|---|
+| `action` | Sends a response or calls a custom action |
+| `collect` | Asks the user for a value and stores it in a slot |
+| `set_slots` | Directly assigns a value to one or more slots |
+| `link` | Starts another flow after this one completes |
+| `call` | Runs another flow inline and returns when it finishes |
+| `next` with `if`/`else` | Creates branching logic based on slot values or conditions |
+
+## A Complete Example: Password Reset
+
+This flow collects a user's email and triggers a backend action to send a reset link:
+
+```yaml flows.yml
+flows:
+  reset_password:
+    description: Helps the user reset their account password by sending a reset link to their email
+    steps:
+      - collect: email_address
+      - action: action_send_password_reset_email
+      - action: utter_password_reset_sent
+```
+
+## Branching Logic
+
+Use the `next` property with `if`/`else` conditions to branch based on collected information:
+
+```yaml flows.yml
+flows:
+  check_account_balance:
+    description: Shows the user their current account balance and offers next steps
+    steps:
+      - action: action_fetch_balance
+      - collect: age
+        next:
+          - if: slots.age < 18
+            then: too_young_step
+          - else: old_enough_step
+      - id: too_young_step
+        action: utter_account_restricted
+      - id: old_enough_step
+        action: utter_show_full_balance
+```
+
+## Linking and Calling Flows
+
+<Tabs>
+  <Tab title="link (sequential)">
+    The `link` step ends the current flow and starts another as a follow-up. Use this to chain flows together — for example, launching a satisfaction survey after completing a task:
+
+    ```yaml flows.yml
+    flows:
+      transfer_money:
+        description: Sends money to another person
+        steps:
+          - collect: recipient_name
+          - collect: amount_of_money
+          - action: action_execute_transfer
+          - action: utter_transfer_complete
+          - link: collect_feedback
+
+      collect_feedback:
+        description: Collects user feedback after completing a task
+        steps:
+          - collect: satisfaction_rating
+          - action: utter_thank_you
+    ```
+  </Tab>
+  <Tab title="call (embedded)">
+    The `call` step runs another flow inline and resumes the parent flow when it finishes. Use this to reuse common sub-flows — for example, an authentication step shared across multiple flows:
+
+    ```yaml flows.yml
+    flows:
+      collect_recipient_details:
+        description: Collects the details of a money transfer recipient
+        if: False   # not directly startable by the LLM
+        steps:
+          - collect: recipient_name
+          - collect: recipient_iban
+
+      transfer_money:
+        description: Transfers money to a new or existing recipient
+        steps:
+          - action: action_show_existing_recipients
+          - collect: need_new_recipient
+            next:
+              - if: slots.need_new_recipient
+                then:
+                  - call: collect_recipient_details
+                    next: get_confirmation
+              - else:
+                  - call: collect_recipient_details
+                    next: get_confirmation
+          - id: get_confirmation
+            collect: transfer_confirmation
+            ask_before_filling: true
+          - action: action_execute_transfer
+    ```
+  </Tab>
+</Tabs>
+
+## Persisting Slots Across Flows
+
+By default, slots are cleared when a flow ends. Use `persisted_slots` to retain values you need later:
+
+```yaml flows.yml
+flows:
+  transfer_money:
+    description: Sends money to a friend or family member
+    persisted_slots:
+      - recipient
+      - amount
+    steps:
+      - collect: recipient
+      - id: ask_amount
+        collect: amount
+        description: the number of US dollars to send
+      - action: action_check_sufficient_funds
+        next:
+          - if: not has_sufficient_funds
+            then:
+              - action: utter_insufficient_funds
+              - set_slots:
+                  - amount: null
+                next: ask_amount
+          - else: final_confirmation
+```
+
+## Three Approaches to Flow Triggers
+
+CALM gives you three ways to decide how a flow gets started:
+
+<CardGroup cols={3}>
+  <Card title="Prescriptive" icon="crosshairs">
+    Use `nlu_trigger` with an NLU classifier. The intent directly starts the flow. Best for high-frequency, clearly-bounded tasks where NLU performs well.
+  </Card>
+  <Card title="Autonomous" icon="wand-magic-sparkles">
+    Rely solely on the LLM command generator reading flow descriptions. Best for complex, ambiguous requests where context matters.
+  </Card>
+  <Card title="Hybrid" icon="shuffle">
+    Combine both: use NLU triggers where they are fast and reliable, and the LLM for everything else. This is the recommended approach for most production assistants.
+  </Card>
+</CardGroup>
+
+<Tip>
+  When writing flow descriptions, think from the user's perspective. "Allows the user to report a lost or stolen card" is far more useful to the LLM router than "Handles card loss/theft scenario."
+</Tip>
+
+## Learn More
+
+- [Flow Steps reference](/build/flow-steps) — full syntax for every step type
+- [Starting Flows](/build/writing-flows) — NLU triggers, flow guards, and the dialogue stack
+- [Conditions](/build/branching-logic) — writing `if`/`else` branching logic
+- [Slots](/concepts/slots) — how collected values are stored and used

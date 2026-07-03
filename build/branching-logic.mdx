@@ -1,0 +1,184 @@
+---
+title: "Branching Logic in Flows: If, Then, Else Conditions"
+sidebarTitle: "Branching Logic"
+description: "Learn how to add conditional branches to your Rasa CALM flows using if/then/else syntax, slot comparisons, step IDs, and best practices."
+---
+
+Branching logic lets your assistant take different paths through a flow depending on what the user has said or what data your actions have retrieved. In Rasa CALM flows, you express branching with `if`/`then`/`else` conditions attached to any step's `next` property. The conditions are evaluated using the [pypred](https://github.com/armon/pypred) library, so you can write expressive, human-readable predicates.
+
+## How Branching Works
+
+Every step in a flow can have a `next` property. When `next` is a simple string, the assistant jumps to the step with that ID. When `next` is a list, Rasa evaluates each `if` condition in order and follows the first one that is true. An `else` clause at the end covers all remaining cases.
+
+```yaml
+- action: action_check_balance
+  next:
+    - if: slots.balance > 0
+      then: transfer_step
+    - else: low_balance_step
+```
+
+Conditions always reference slots using the `slots.` namespace prefix. Without the prefix, the condition will not evaluate correctly.
+
+## Condition Expressions
+
+You can use standard comparison and boolean operators in condition expressions:
+
+| Operator | Example |
+|---|---|
+| Equality | `slots.account_type = "savings"` |
+| Inequality | `slots.age != 18` |
+| Greater / less than | `slots.balance > 100` |
+| Boolean check | `slots.is_verified` or `not slots.is_verified` |
+| Logical AND | `slots.age >= 18 and slots.age < 65` |
+| Logical OR | `slots.tier = "gold" or slots.tier = "platinum"` |
+| Null check | `slots.recipient is null` or `slots.recipient is not null` |
+| `not` with condition | `not slots.has_sufficient_funds` |
+
+## Inline Branching: Nested Steps Under `then`
+
+The `then` key can either point to a step ID (a string) or contain a list of steps to execute inline. Use inline steps when you want to run a small sub-sequence without giving each step its own ID.
+
+```yaml flows.yml
+flows:
+  block_card:
+    description: Block a user's credit card when they suspect fraud or want to freeze it.
+    steps:
+      - collect: user_authenticated
+        next:
+          - if: not slots.user_authenticated
+            then:
+              - action: utter_please_log_in
+              - link: authenticate_user_flow
+      - collect: card_number
+      - action: action_block_card
+      - action: utter_card_blocked
+```
+
+## Jumping to Step IDs
+
+Give any step an `id` label and use that label as a branch target. This is the standard way to loop back to a previous step or skip ahead without duplicating logic.
+
+```yaml flows.yml
+flows:
+  transfer_money:
+    description: Send money to a friend or family member.
+    steps:
+      - collect: recipient
+      - id: ask_amount
+        collect: amount
+        description: "The number of US dollars to send"
+      - action: action_check_sufficient_funds
+        next:
+          - if: not slots.has_sufficient_funds
+            then:
+              - action: utter_insufficient_funds
+              - set_slots:
+                  - amount: null
+                next: ask_amount        # loop back to re-ask
+          - else: final_confirmation
+      - id: final_confirmation
+        collect: transfer_confirmed
+        ask_before_filling: true
+        next:
+          - if: slots.transfer_confirmed
+            then:
+              - action: action_execute_transfer
+              - action: utter_transfer_complete
+          - else:
+              - action: utter_transfer_cancelled
+                next: END
+```
+
+## Ending a Flow Early with `next: END`
+
+Use `next: END` inside a `then` block to terminate the flow without executing further steps. This is useful for early exits when a condition makes the rest of the flow irrelevant.
+
+```yaml
+- collect: age
+  next:
+    - if: slots.age < 18
+      then:
+        - action: utter_not_eligible
+          next: END
+    - else: continue_flow
+```
+
+## Using `noop` for Pure Branch Points
+
+When you need a decision point at the start of a flow — before any action or collection — use `noop: true`. It creates a branch point without doing anything else at that step.
+
+```yaml flows.yml
+flows:
+  change_address:
+    description: Allow the user to update their mailing address.
+    steps:
+      - noop: true
+        next:
+          - if: not slots.authenticated
+            then:
+              - call: authenticate_user
+                next: ask_new_address
+          - else: ask_new_address
+      - id: ask_new_address
+        collect: new_address
+```
+
+## Multi-Path Example: Checkout Flow
+
+The following example shows a checkout flow with multiple condition-driven paths: one for verified users with sufficient balance, one for users who need to add funds, and one for unverified users.
+
+```yaml flows.yml
+flows:
+  checkout:
+    description: Complete a purchase for the user.
+    steps:
+      - noop: true
+        next:
+          - if: not slots.is_verified
+            then:
+              - action: utter_verification_required
+              - link: identity_verification_flow
+          - else: check_balance
+      - id: check_balance
+        action: action_check_balance
+        next:
+          - if: slots.balance >= slots.order_total
+            then: confirm_purchase
+          - else: insufficient_funds
+      - id: insufficient_funds
+        action: utter_add_funds_prompt
+        next: END
+      - id: confirm_purchase
+        collect: purchase_confirmed
+        ask_before_filling: true
+        next:
+          - if: slots.purchase_confirmed
+            then:
+              - action: action_process_payment
+              - action: utter_order_confirmed
+          - else:
+              - action: utter_order_cancelled
+                next: END
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Keep flows readable" icon="book-open">
+    Avoid deeply nested `then` blocks. If a branch grows complex, extract it into a child flow and use `call` to embed it. This keeps each flow's intent obvious at a glance.
+  </Card>
+  <Card title="Use patterns for repairs" icon="wrench">
+    Don't add branching for every possible detour (cancellations, corrections, digressions). Rasa's built-in conversation patterns handle these cases automatically — let them.
+  </Card>
+  <Card title="Name your step IDs clearly" icon="tag">
+    Use descriptive IDs like `ask_amount` or `confirm_purchase` rather than generic labels like `step_3`. Clear IDs make `next` jumps self-documenting.
+  </Card>
+  <Card title="Always add an else clause" icon="shield-check">
+    Whenever you write `if` conditions, include an `else` branch. Without it, the assistant may fall through with undefined behaviour if no condition matches.
+  </Card>
+</CardGroup>
+
+<Note>
+  For complex validation (for example, checking if an email address is valid or if a date is in the future), keep the logic in a [custom action](/build/custom-actions) rather than inline conditions. Custom actions return a slot value that your flow's `if` condition can then evaluate cleanly.
+</Note>

@@ -1,0 +1,496 @@
+---
+title: "Supported LLM Providers in Rasa: OpenAI to Self-Hosted"
+sidebarTitle: "LLM Providers"
+description: "Every LLM and embedding provider supported by Rasa Pro — configuration, required env vars, and recommended models for each CALM component."
+---
+
+Rasa Pro uses [LiteLLM](https://litellm.vercel.app/) under the hood (from version 3.10+) to connect to language model providers, which means every [LiteLLM-supported provider](https://litellm.vercel.app/docs/providers) is available to your assistant. This page documents the providers that Rasa has tested explicitly, along with the exact configuration snippets and environment variables each one requires.
+
+All LLM deployments are declared in `endpoints.yml` under the `model_groups` key and referenced by name in `config.yml` component definitions.
+
+<Note>
+For Rasa Pro 3.10 and earlier, see the legacy LLM configuration docs at [rasa.com/docs](https://rasa.com/docs/reference/config/components/llm-configuration/). The `model_groups` pattern applies to 3.11+.
+</Note>
+
+---
+
+## Chat Completion Providers
+
+### Provider Quick Reference
+
+| Provider | `provider` value | Primary API key variable |
+|---|---|---|
+| OpenAI | `openai` | `OPENAI_API_KEY` |
+| Azure OpenAI | `azure` | `AZURE_API_KEY` |
+| Amazon Bedrock | `bedrock` | `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` |
+| Mistral | `mistral` | `MISTRAL_API_KEY` |
+| Google Gemini | `gemini` | `GEMINI_API_KEY` |
+| HuggingFace Inference | `huggingface` | `HUGGINGFACE_API_KEY` |
+| Anthropic | `anthropic` | `ANTHROPIC_API_KEY` |
+| Self-hosted (vLLM, Ollama) | `openai` (OpenAI-compatible) | — |
+| Groq | `groq` | `GROQ_API_KEY` |
+| Cohere | `cohere` | `COHERE_API_KEY` |
+| Together AI | `together_ai` | `TOGETHERAI_API_KEY` |
+
+---
+
+<Accordion title="OpenAI">
+
+OpenAI is the default provider. Most Rasa experiments and recommended model defaults are based on the OpenAI platform.
+
+**Set your API key**
+
+```bash
+export OPENAI_API_KEY=<your-api-key>
+```
+
+**endpoints.yml**
+
+```yaml
+model_groups:
+  - id: openai_llm
+    models:
+      - provider: openai
+        model: gpt-5.1-2025-11-13
+        # api_key: ${OPENAI_API_KEY}  # optional — uses env var by default
+        timeout: 7
+        temperature: 1.0
+```
+
+**config.yml**
+
+```yaml
+pipeline:
+  - name: CompactLLMCommandGenerator
+    llm:
+      model_group: openai_llm
+```
+
+<Note>
+Rasa does not transmit your data to OpenAI for training purposes. OpenAI's enterprise API does not use your data to train their models by default.
+</Note>
+
+For reasoning-capable models like `gpt-5-mini-2025-08-07`, you can control how much internal reasoning the model applies:
+
+```yaml
+models:
+  - provider: openai
+    model: gpt-5-mini-2025-08-07
+    reasoning_effort: "minimal"   # none | minimal | low | high
+```
+
+</Accordion>
+
+<Accordion title="Azure OpenAI">
+
+Azure OpenAI requires additional connection parameters on top of the API key.
+
+**Set your API key**
+
+```bash
+export AZURE_API_KEY=<your-api-key>
+```
+
+**Required parameters**
+
+| Parameter | Description |
+|---|---|
+| `provider` | `azure` |
+| `deployment` | Name of your Azure deployment |
+| `api_base` | Your Azure OpenAI endpoint URL |
+| `api_version` | API version in `YYYY-MM-DD` format |
+| `api_key` | Reference via `${AZURE_API_KEY}` |
+
+**endpoints.yml**
+
+```yaml
+model_groups:
+  - id: azure_llm
+    models:
+      - provider: azure
+        deployment: rasa-gpt-4o
+        api_base: https://my-azure.openai.azure.com/
+        api_version: "2025-02-01-preview"
+        api_key: ${MY_AZURE_API_KEY}
+        timeout: 7
+```
+
+**config.yml**
+
+```yaml
+pipeline:
+  - name: CompactLLMCommandGenerator
+    llm:
+      model_group: azure_llm
+```
+
+<Tip>
+If you encounter timeout errors, increase the `timeout` parameter. The right value depends on your Azure instance configuration.
+</Tip>
+
+**OAuth authentication (Rasa Pro 3.12+)**
+
+For Azure deployments that use Entra ID instead of an API key, configure OAuth directly in the model group. The `api_key` and `oauth` fields are mutually exclusive.
+
+<Tabs>
+  <Tab title="Client Secret">
+    ```yaml
+    model_groups:
+      - id: azure_oauth
+        models:
+          - provider: azure
+            deployment: rasa-gpt-4o
+            api_base: ${AZURE_GATEWAY_URL}
+            api_version: "2024-03-01-preview"
+            oauth:
+              type: azure_entra_id_client_secret
+              scopes: ${AZURE_APP_SCOPE}
+              client_id: ${AZURE_CLIENT_ID}
+              tenant_id: ${AZURE_TENANT_ID}
+              client_secret: ${AZURE_CLIENT_SECRET}
+    ```
+  </Tab>
+  <Tab title="Client Certificate">
+    ```yaml
+    model_groups:
+      - id: azure_oauth_cert
+        models:
+          - provider: azure
+            deployment: rasa-gpt-4o
+            api_base: ${AZURE_GATEWAY_URL}
+            api_version: "2024-03-01-preview"
+            oauth:
+              type: azure_entra_id_client_certificate
+              scopes: ${AZURE_APP_SCOPE}
+              client_id: ${AZURE_CLIENT_ID}
+              tenant_id: ${AZURE_TENANT_ID}
+              certificate_path: ${AZURE_CERT_PATH}
+    ```
+  </Tab>
+  <Tab title="Default Azure Credentials">
+    ```yaml
+    model_groups:
+      - id: azure_oauth_default
+        models:
+          - provider: azure
+            deployment: rasa-gpt-4o
+            api_base: ${AZURE_GATEWAY_URL}
+            api_version: "2024-03-01-preview"
+            oauth:
+              type: azure_entra_id_default
+              scopes: ${AZURE_SCOPE}
+    ```
+  </Tab>
+</Tabs>
+
+</Accordion>
+
+<Accordion title="Amazon Bedrock">
+
+**Requirements**
+
+1. Install `boto3>=1.28.57`.
+2. Your AWS credentials must be accessible via `~/.aws/credentials`, an IAM role, or environment variables.
+3. Enable model access for your chosen model in the AWS Bedrock console.
+
+**Environment variables (when not using IAM roles)**
+
+```bash
+export AWS_ACCESS_KEY_ID=<key>
+export AWS_SECRET_ACCESS_KEY=<secret>
+export AWS_REGION=us-east-1
+# Optional for temporary credentials:
+export AWS_SESSION_TOKEN=<token>
+```
+
+**endpoints.yml (IAM role)**
+
+```yaml
+model_groups:
+  - id: bedrock_llm
+    models:
+      - provider: bedrock
+        model: anthropic.claude-3-7-sonnet-20250219-v1:0
+        model_id: arn:aws:bedrock:us-east-1:123456789012:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0
+        aws_region_name: us-east-1
+```
+
+**endpoints.yml (explicit credentials)**
+
+```yaml
+model_groups:
+  - id: bedrock_llm
+    models:
+      - provider: bedrock
+        model: anthropic.claude-instant-v1
+        aws_access_key_id: ${MY_AWS_ACCESS_KEY_ID}
+        aws_secret_access_key: ${MY_AWS_SECRET_ACCESS_KEY}
+        aws_region_name: eu-central-1
+        aws_session_token: ${MY_AWS_SESSION_TOKEN}
+```
+
+<Warning>
+The `bedrock:InvokeModelWithResponseStream` IAM permission is required for any streaming feature, including the `ContextualResponseRephraser`. Without it, streaming calls fail even if `bedrock:InvokeModel` is granted.
+</Warning>
+
+</Accordion>
+
+<Accordion title="Mistral">
+
+**Set your API key**
+
+```bash
+export MISTRAL_API_KEY=<your-api-key>
+```
+
+**endpoints.yml**
+
+```yaml
+model_groups:
+  - id: mistral_llm
+    models:
+      - provider: mistral
+        model: mistral-large-latest
+        # api_key: ${MISTRAL_API_KEY}  # optional
+```
+
+</Accordion>
+
+<Accordion title="Google Gemini">
+
+**Requirements**
+
+1. Install `google-generativeai`.
+2. Get an API key at [aistudio.google.com](https://aistudio.google.com/).
+
+**Set your API key**
+
+```bash
+export GEMINI_API_KEY=<your-api-key>
+```
+
+**endpoints.yml**
+
+```yaml
+model_groups:
+  - id: gemini_llm
+    models:
+      - provider: gemini
+        model: gemini-pro
+        # api_key: ${GEMINI_API_KEY}  # optional
+```
+
+</Accordion>
+
+<Accordion title="HuggingFace Inference Endpoints">
+
+**Set your API key**
+
+```bash
+export HUGGINGFACE_API_KEY=<your-api-key>
+```
+
+**endpoints.yml**
+
+```yaml
+model_groups:
+  - id: hf_llm
+    models:
+      - provider: huggingface
+        model: https://your-inference-endpoint.huggingface.cloud
+        api_key: ${HUGGINGFACE_API_KEY}
+```
+
+</Accordion>
+
+<Accordion title="Anthropic">
+
+**Set your API key**
+
+```bash
+export ANTHROPIC_API_KEY=<your-api-key>
+```
+
+**endpoints.yml**
+
+```yaml
+model_groups:
+  - id: anthropic_llm
+    models:
+      - provider: anthropic
+        model: claude-3-5-sonnet-20241022
+        # api_key: ${ANTHROPIC_API_KEY}  # optional
+```
+
+</Accordion>
+
+<Accordion title="Self-Hosted (vLLM / Ollama)">
+
+Self-hosted models that expose an OpenAI-compatible API (such as vLLM and Ollama) use `provider: openai` with a custom `api_base`:
+
+**endpoints.yml**
+
+```yaml
+model_groups:
+  - id: self_hosted_llm
+    models:
+      - provider: openai
+        model: meta-llama/CodeLlama-7b-Instruct-hf
+        api_base: http://your-vllm-server:8000/v1
+```
+
+You can also use the `api_base` parameter as an HTTPS proxy for routing LLM requests through a proxy server.
+
+</Accordion>
+
+<Accordion title="Groq, Cohere, and Together AI">
+
+**Set the appropriate API key**
+
+```bash
+export GROQ_API_KEY=<key>
+export COHERE_API_KEY=<key>
+export TOGETHERAI_API_KEY=<key>
+```
+
+**endpoints.yml examples**
+
+```yaml
+model_groups:
+  - id: groq_llm
+    models:
+      - provider: groq
+        model: llama3-8b-8192
+
+  - id: cohere_llm
+    models:
+      - provider: cohere
+        model: command-r-plus
+
+  - id: together_llm
+    models:
+      - provider: together_ai
+        model: meta-llama/Llama-3-70b-chat-hf
+```
+
+</Accordion>
+
+---
+
+## Embedding Model Providers
+
+Embedding models are configured under a separate `model_group` and referenced via the `embeddings.model_group` key in `config.yml`.
+
+```yaml
+# config.yml
+pipeline:
+  - name: CompactLLMCommandGenerator
+    llm:
+      model_group: openai_llm
+    flow_retrieval:
+      embeddings:
+        model_group: text_embedding_model
+```
+
+```yaml
+# endpoints.yml
+model_groups:
+  - id: text_embedding_model
+    models:
+      - provider: openai
+        model: text-embedding-3-large
+```
+
+### Supported embedding providers
+
+| Provider | `provider` value | Notes |
+|---|---|---|
+| OpenAI | `openai` | Default; `text-embedding-3-large` recommended |
+| Azure OpenAI | `azure` | Same params as chat completion |
+| Amazon Bedrock | `bedrock` | e.g., `amazon.titan-embed-text-v1` |
+| Mistral | `mistral` | e.g., `mistral-embed` |
+| HuggingFace (in-memory) | `huggingface` | Runs locally via `sentence-transformers` |
+| Cohere | `cohere` | `COHERE_API_KEY` required |
+| Voyage AI | `voyage` | `VOYAGE_API_KEY` required |
+
+**In-memory HuggingFace embedding (no external API)**
+
+```yaml
+# endpoints.yml
+model_groups:
+  - id: local_embeddings
+    models:
+      - provider: huggingface
+        model: BAAI/bge-small-en-v1.5
+        model_kwargs:
+          device: "cpu"
+        encode_kwargs:
+          normalize_embeddings: true
+```
+
+The `model` value can be any HuggingFace Hub model ID or a path to a local model directory.
+
+---
+
+## Recommended Models by Component
+
+| Component | Recommended model | Providers |
+|---|---|---|
+| `CompactLLMCommandGenerator` | `gpt-5.1-2025-11-13` | OpenAI, Azure, Anthropic, Bedrock |
+| `SearchReadyLLMCommandGenerator` | `gpt-5.1-2025-11-13` | OpenAI, Azure, Anthropic, Bedrock |
+| `ContextualResponseRephraser` | `gpt-5.1-2025-11-13` | OpenAI, Azure |
+| `EnterpriseSearchPolicy` (generative) | `gpt-5-mini-2025-08-07` | OpenAI, Azure |
+| `EnterpriseSearchPolicy` (embeddings) | `text-embedding-3-large` | OpenAI |
+| `LLMBasedRouter` | `gpt-5-mini-2025-08-07` | OpenAI, Azure |
+| `MCPBaseAgent` | `gpt-5.1-2025-11-13` | OpenAI, Azure |
+| `IntentlessPolicy` (deprecated) | `gpt-5-mini-2025-08-07` | OpenAI, Azure |
+
+---
+
+## SSL Certificates and Proxy
+
+### Custom SSL certificates
+
+If your environment uses TLS interception (e.g., a corporate proxy), point Rasa at your certificate bundle:
+
+```bash
+export RASA_CA_BUNDLE="path/to/your/certificate.pem"
+```
+
+### HTTP/HTTPS proxy
+
+To route all LLM API calls through a proxy:
+
+```bash
+export HTTP_PROXY="http://your-proxy:port"
+export HTTPS_PROXY="https://your-proxy:port"
+```
+
+---
+
+## LLM Health Check
+
+To validate that all declared LLM deployments are reachable before your assistant starts processing messages, set:
+
+```bash
+export LLM_API_HEALTH_CHECK=true
+```
+
+Rasa makes a test API request to each model group on startup and reports any unreachable endpoints.
+
+---
+
+## Referencing Environment Variables
+
+All sensitive values in `endpoints.yml` support the `${VAR_NAME}` syntax:
+
+```yaml
+model_groups:
+  - id: openai_direct
+    models:
+      - provider: openai
+        model: gpt-5.1-2025-11-13
+        api_key: ${MY_OPENAI_API_KEY}
+```
+
+Directly embedding API keys in config files is not supported — you must use environment variable references. See [Environment Variables](/reference/environment-variables) for a full variable reference.

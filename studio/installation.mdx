@@ -1,0 +1,180 @@
+---
+title: "Installing Rasa Studio: Docker Compose and Helm"
+sidebarTitle: "Installation"
+description: "Deploy Rasa Studio in your own environment using Docker Compose for quick setup or Helm/Kubernetes for production-grade, scalable deployments."
+---
+
+Rasa Studio is a self-hosted product—you deploy it within your own environment rather than connecting to a cloud service. This gives your organization full control over data residency, network security, and scaling. Studio offers two deployment paths: Docker Compose for a straightforward local or trial setup, and Helm for production deployments on Kubernetes.
+
+<CardGroup cols={2}>
+  <Card title="Docker Compose" icon="docker">
+    The recommended path for getting started or running a trial. Easier setup, no Kubernetes required.
+  </Card>
+  <Card title="Helm / Kubernetes" icon="dharmachakra">
+    Best for teams that already have a Kubernetes cluster and need maximum control and flexibility for a production deployment.
+  </Card>
+</CardGroup>
+
+<Note>
+  Read the [System Architecture Guide](https://rasa.com/docs/reference/architecture/studio/) to understand the containers, services, and resource requirements before deploying.
+</Note>
+
+---
+
+## Option 1: Docker Compose
+
+Docker Compose is the fastest way to get Studio running. Use it for local development, demos, or evaluating Studio before a production rollout.
+
+### Prerequisites
+
+- Docker **20.10.0** or higher
+- Docker Compose **2.0.0** or higher (not required if you have Docker Desktop)
+- At least **4 GB** of available RAM
+- A Rasa license key with a Studio entitlement
+- An OpenAI API key (or credentials for another supported LLM)
+
+### Deploy with Docker Compose
+
+<Steps>
+  <Step title="Clone the Studio Docker Compose repository">
+    ```bash
+    git clone https://github.com/RasaHQ/studio-docker-compose.git
+    cd studio-docker-compose
+    ```
+  </Step>
+  <Step title="Configure environment variables">
+    Open the `.env` file and set the required values. Use the [latest version of Rasa Studio](https://www.rasa.com/docs/reference/changelogs/studio-changelog) and the [compatible version of Rasa Pro](https://www.rasa.com/docs/reference/changelogs/rasa-pro-changelog). Check the [Compatibility Matrix](https://www.rasa.com/docs/reference/changelogs/compatibility-matrix) to confirm versions work together.
+  </Step>
+  <Step title="Start all services">
+    ```bash
+    docker compose up
+    ```
+
+    To run in the background instead:
+
+    ```bash
+    docker compose up -d
+    ```
+
+    Then monitor startup progress with:
+
+    ```bash
+    docker compose logs -f startup-helper
+    ```
+  </Step>
+  <Step title="Wait for Studio to be ready">
+    Studio is ready when you see this message in the logs:
+
+    ```
+    🚀 Rasa Studio is ready!
+    📱 Studio URL: http://localhost:8080
+    🔐 Keycloak User Management URL: http://localhost:8081/auth/
+    ```
+  </Step>
+</Steps>
+
+### Access URLs (Docker Compose)
+
+| Service | URL |
+|---|---|
+| Main Application | `http://localhost:8080` |
+| Keycloak Admin Console | `http://localhost:8081/auth/` |
+| Backend API | `http://localhost:4000/api` |
+| Model Service | `http://localhost:8000` |
+
+Default credentials are documented in the repository's [README file](https://github.com/RasaHQ/studio-docker-compose/?tab=readme-ov-file#credentials-reference). You can override them at deploy time by adding the relevant variables to `.env` before running `docker compose up`.
+
+---
+
+## Option 2: Helm (Kubernetes)
+
+Use the Helm chart when you need a production-grade deployment with fine-grained control over resource limits, secrets management, ingress configuration, and horizontal scaling.
+
+### Prerequisites
+
+- A Rasa enterprise account with both a Rasa license key and a Studio license key
+- An OpenAI API key or credentials for another supported LLM
+- Helm **≥ 3.8.0** ([installation guide](https://helm.sh/docs/intro/install/))
+- A running Kubernetes cluster ([GKE](https://cloud.google.com/kubernetes-engine/docs/how-to/creating-a-zonal-cluster), [EKS](https://docs.aws.amazon.com/eks/latest/userguide/create-cluster.html), or [AKS](https://learn.microsoft.com/en-us/azure/aks/tutorial-kubernetes-deploy-cluster?tabs=azure-cli))
+- `kubectl` configured to manage your cluster
+
+### Deploy with Helm
+
+<Steps>
+  <Step title="Pull the official Studio Helm chart">
+    ```bash
+    helm pull oci://europe-west3-docker.pkg.dev/rasa-releases/helm-charts/studio
+    ```
+
+    This downloads a `.tgz` file (for example, `studio-1.0.3.tgz`). Extract it to inspect the chart templates and default `values.yaml`.
+  </Step>
+  <Step title="Create your custom values file">
+    1. Copy `values.yaml` from the extracted chart directory:
+       ```bash
+       cp studio/values.yaml my-values.yaml
+       ```
+    2. Open `my-values.yaml` and update the configuration options for your Kubernetes environment. Refer to the chart's `README.md` for a full list of available keys.
+
+    <Tip>
+      For PostgreSQL, [percent-encode special characters](https://developer.mozilla.org/en-US/docs/Glossary/percent-encoding) in connection URLs. For example, `p@$$w0rd` becomes `p%40%24%24w0rd`.
+    </Tip>
+  </Step>
+  <Step title="Create Kubernetes secrets">
+    1. Copy `secrets.yaml` from the extracted chart directory:
+       ```bash
+       cp studio/secrets.yaml my-secrets.yaml
+       ```
+    2. Base64-encode each secret value:
+       ```bash
+       echo -n "my-secret-key" | base64
+       ```
+    3. Paste the encoded values into `my-secrets.yaml`, then apply:
+       ```bash
+       kubectl apply -f my-secrets.yaml -n <namespace>
+       ```
+
+    The required secrets are:
+
+    ```yaml
+    DATABASE_PASSWORD:       # Studio database password
+    KAFKA_SASL_PASSWORD:     # Kafka SASL password (if applicable)
+    KEYCLOAK_ADMIN_PASSWORD: # Keycloak admin UI password
+    KEYCLOAK_API_PASSWORD:   # Keycloak API password (used internally)
+    RASA_LICENSE_SECRET_KEY: # Rasa license key
+    OPENAI_API_KEY_SECRET_KEY: # OpenAI API key
+    ```
+  </Step>
+  <Step title="Deploy Studio with Helm">
+    ```bash
+    helm upgrade rasa-studio ./studio \
+      -f ./my-values.yaml \
+      -n studio \
+      --install
+    ```
+
+    Replace `./studio` with the path to your extracted chart folder, and `studio` with your target namespace.
+  </Step>
+  <Step title="Monitor the deployment">
+    ```bash
+    kubectl get pods -n studio
+    ```
+
+    Wait until all pods show `Running` and `Ready` status. Then open `https://<external-ip-or-hostname>` in your browser.
+  </Step>
+</Steps>
+
+---
+
+## After Installation: Activate Your License
+
+Regardless of which deployment method you used, the final setup step is license activation.
+
+1. Open Studio in your browser.
+2. Go to **Settings → License Activation**.
+3. Enter your Rasa license key and save.
+
+Once your license is activated, you can [add users](./managing-users) and start [building your first assistant](./tutorial).
+
+<Warning>
+  Do not modify or delete the `realmadmin` user in Keycloak. This user is required for Studio to interact with Keycloak APIs correctly.
+</Warning>

@@ -1,0 +1,85 @@
+---
+title: "Deploying Rasa: Docker, Kubernetes, and Cloud Options"
+sidebarTitle: "Deploy Overview"
+description: "Compare Docker, Kubernetes/Helm, and cloud deployment options for Rasa Pro and choose the right path for your assistant's scale and requirements."
+---
+
+Once your assistant passes testing, you need to deploy it somewhere users can reach it. Rasa Pro supports several deployment models to match different scale requirements—from a quick Docker Compose setup for small or staging environments, to a production-grade Kubernetes cluster on AWS EKS, Azure AKS, or GCP. Understanding your options before you start will save you from having to migrate later as traffic grows.
+
+## What you need to deploy Rasa Pro
+
+Regardless of which deployment model you choose, every Rasa Pro deployment requires the same core components:
+
+<CardGroup cols={2}>
+  <Card title="Rasa Pro Image" icon="docker">
+    The official Docker image at `rasa/rasa-pro` or the Artifact Registry image. You specify a version tag to pin your deployment to a specific release.
+  </Card>
+  <Card title="Rasa License" icon="key">
+    A valid Rasa Pro license key, passed as the `RASA_LICENSE` environment variable at runtime. The assistant will not start without it.
+  </Card>
+  <Card title="LLM API Key" icon="robot">
+    Your LLM provider API key (e.g., `OPENAI_API_KEY`) for CALM-based assistants that use LLM-driven command generation.
+  </Card>
+  <Card title="Action Server (optional)" icon="bolt">
+    If your assistant uses custom actions, you need to deploy the action server separately and configure its URL in `endpoints.yml`.
+  </Card>
+</CardGroup>
+
+For production deployments, you will also want:
+
+- **A trained model** stored in cloud storage (S3, GCS, or Azure Blob) so Rasa can load it at startup
+- **A Kafka cluster** if you want to stream conversation events for analytics or Conversation Review
+- **A data warehouse** (PostgreSQL, Redshift, BigQuery, or Snowflake) for the analytics pipeline
+
+## Deployment options
+
+### Docker (quick and small-scale)
+
+Docker is the fastest way to get Rasa Pro running. Pull the image, pass your license as an environment variable, mount your project directory, and run. This approach is well-suited for:
+
+- Local development and testing
+- Staging environments
+- Small-scale deployments with low traffic
+
+For Docker Compose deployments, the [developer edition template](https://github.com/RasaHQ/developer-edition-docker-compose) gets you running in under 20 minutes, including the time to provision a VM.
+
+### Kubernetes with Helm (production-grade)
+
+For production deployments that need to handle high traffic, roll out updates without downtime, or run multiple Rasa services together, Kubernetes with the Rasa Pro Helm chart is the recommended approach. Kubernetes lets you:
+
+- Scale the number of Rasa pods horizontally to handle traffic spikes
+- Manage rolling updates so users experience no downtime during releases
+- Deploy the action server, Rasa Pro Services for analytics, and the main Rasa runtime as coordinated workloads
+- Use cloud provider managed services for Kafka, model storage, and databases
+
+Rasa supports AWS EKS, Azure AKS, GCP GKE, DigitalOcean, and OpenShift clusters.
+
+### Rasa Managed Service
+
+If you prefer a fully managed solution without infrastructure overhead, Rasa's Managed Service handles cluster setup, scaling, and operations for you. Contact Rasa for details.
+
+## Quick vs. production deployment
+
+| Factor | Docker / Docker Compose | Kubernetes / Helm |
+|---|---|---|
+| Setup time | Minutes | Hours to days |
+| Scaling | Manual | Automatic (horizontal pod autoscaling) |
+| High availability | Limited | Built-in with multiple replicas |
+| Rolling updates | Manual | Native Helm upgrade |
+| Analytics pipeline | Not included | Supported via Rasa Pro Services |
+| Best for | Development, staging, small scale | Production, high traffic |
+
+## Choose your deployment path
+
+<CardGroup cols={2}>
+  <Card title="Docker" icon="docker" href="./deploy-docker">
+    Pull the Rasa Pro image, configure environment variables, and run your assistant with a single `docker run` command. Ideal for quick starts and small deployments.
+  </Card>
+  <Card title="Kubernetes" icon="server" href="./deploy-kubernetes">
+    Use the Rasa Pro Helm chart to deploy to any Kubernetes cluster. Configure model storage, the action server, and Rasa Pro Services for a full production setup.
+  </Card>
+</CardGroup>
+
+<Note>
+  If you have a commercial Rasa license, the Rasa team can assist with setting up a cluster deployment. Reach out through your account team to get started.
+</Note>

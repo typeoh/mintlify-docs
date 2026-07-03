@@ -1,0 +1,333 @@
+---
+title: "End-to-End Testing for Rasa Assistants: Automate Conversations"
+sidebarTitle: "E2E Tests"
+description: "Write and run automated conversation tests for your Rasa assistant using YAML test cases, assertions, fixtures, and coverage reports."
+---
+
+End-to-end (E2E) tests are the backbone of a reliable Rasa assistant. Each test case defines a complete conversation—user messages, expected bot responses, slot values, and flow events—and verifies that your assistant handles it exactly as specified. When you run `rasa test e2e`, the test runner replays every conversation against a live instance of your assistant and reports any mismatches. This makes E2E tests the right tool for catching regressions when you change flows, update LLM prompts, or refactor custom actions.
+
+## Test file format
+
+Test cases live in YAML files inside your project's `tests` directory. The simplest setup is a single file called `tests/e2e_test_cases.yml`, but you can organize tests into subdirectories for larger projects—Rasa discovers them automatically.
+
+Every test file must contain a `test_cases` key with a list of named test scenarios:
+
+```yaml
+test_cases:
+  - test_case: user transfers money
+    steps:
+      - user: I want to send $50 to Alice
+      - slot_was_set:
+          - amount: 50
+          - recipient: Alice
+      - utter: utter_ask_final_confirmation
+      - user: yes
+      - utter: utter_transfer_complete
+```
+
+Each `test_case` has a unique name and a `steps` list that describes the conversation from start to finish.
+
+## Step types
+
+You build test cases from five fundamental step types:
+
+<AccordionGroup>
+  <Accordion title="user">
+    Simulates a user message. This triggers the assistant to process the input and generate a response.
+
+    ```yaml
+    - user: I want to book a flight to Paris
+    ```
+  </Accordion>
+  <Accordion title="bot">
+    Checks that the bot's last response matches a specific text string exactly.
+
+    ```yaml
+    - bot: Thank you for booking. Your confirmation number is 1234.
+    ```
+  </Accordion>
+  <Accordion title="utter">
+    Checks that the bot used a named domain response (e.g., `utter_ask_destination`). Use this instead of `bot` when you want to verify which response template fired rather than the exact text.
+
+    ```yaml
+    - utter: utter_ask_destination
+    ```
+  </Accordion>
+  <Accordion title="slot_was_set">
+    Confirms that a slot was filled after the preceding user message. You can check that a slot was set at all, or that it was set to a specific value.
+
+    ```yaml
+    - slot_was_set:
+        - destination: Paris
+        - travel_date: "2025-03-01"
+        - passenger_count   # just check it was set, no value check
+    ```
+  </Accordion>
+  <Accordion title="slot_was_not_set">
+    Confirms that a slot was _not_ filled. If you include a value, it checks that the slot was not set to that specific value.
+
+    ```yaml
+    - slot_was_not_set:
+        - payment_method
+        - destination: London  # set to something else is fine, but not London
+    ```
+  </Accordion>
+</AccordionGroup>
+
+<Note>
+  The order of `bot`, `utter`, and `slot_was_set` steps after a `user` step does not matter. The test runner checks that all specified events occurred after that user message, regardless of sequence.
+</Note>
+
+## Assertions
+
+Assertions give you more precise control over what you verify. You attach them directly to a `user` step and can check flow lifecycle events, generative response quality, and more.
+
+```yaml
+test_cases:
+  - test_case: flight booking assertion example
+    steps:
+      - user: "I want to book a flight"
+        assertions:
+          - flow_started:
+              operator: "all"
+              flow_ids:
+                - "flight_booking"
+          - bot_uttered:
+              utter_name: "utter_ask_destination"
+      - user: "New York"
+        assertions:
+          - slot_was_set:
+              - name: "destination"
+                value: "New York"
+```
+
+<Warning>
+  When a `user` step contains assertions, traditional step types like `bot:` and `utter:` in the same step are ignored. Use the `bot_uttered` assertion instead to check bot responses within an assertions block.
+</Warning>
+
+The available assertion types are:
+
+| Assertion | Description |
+|---|---|
+| `flow_started` | Verify a flow has begun |
+| `flow_completed` | Confirm a flow (or a specific step) finished |
+| `flow_cancelled` | Ensure a flow was cancelled |
+| `pattern_clarification_contains` | Check that expected clarification suggestions were returned |
+| `slot_was_set` | Validate a slot is filled with the expected value |
+| `slot_was_not_set` | Confirm a slot is not set or not set to a specific value |
+| `action_executed` | Assert a particular action was triggered |
+| `bot_uttered` | Verify the bot's response text, buttons, or response name |
+| `bot_did_not_utter` | Ensure the bot's response does not match a pattern |
+| `generative_response_is_relevant` | Check a generative response is contextually relevant |
+| `generative_response_is_grounded` | Confirm a generative response is factually accurate against a reference |
+
+### Generative response assertions
+
+When your assistant uses the Response Rephraser or Enterprise Search, you can assert that the generated text meets a quality threshold. The `generative_response_is_grounded` assertion uses an LLM Judge to evaluate factual accuracy:
+
+```yaml
+- user: "What is the average cost of a flight from New York to San Francisco?"
+  assertions:
+    - generative_response_is_grounded:
+        threshold: 0.90
+        ground_truth: "The average cost of a flight from New York to San Francisco is $500."
+        utter_source: EnterpriseSearchPolicy
+```
+
+For relevance checks (without a reference text):
+
+```yaml
+- user: "What times are the flights from New York to San Francisco tomorrow?"
+  assertions:
+    - generative_response_is_relevant:
+        threshold: 0.90
+        utter_source: ContextualResponseRephraser
+```
+
+<Tip>
+  Use a different LLM provider for the judge model than the one powering your assistant's generative components. This reduces self-preference bias in relevance and grounding evaluations. Configure the judge in `conftest.yml`:
+
+  ```yaml
+  llm_judge:
+    llm:
+      provider: openai
+      model: "gpt-4.1-mini-2025-04-14"
+    embeddings:
+      provider: openai
+      model: "text-embedding-3-large"
+  ```
+</Tip>
+
+## Fixtures for pre-filled slots
+
+Use fixtures to pre-populate slot values before a test case runs. This is useful for testing scenarios that require a specific user context—such as a logged-in premium member—without simulating the login flow in every test.
+
+```yaml
+fixtures:
+  - premium:
+      - membership_type: premium
+      - logged_in: True
+  - standard:
+      - logged_in: False
+      - membership_type: standard
+
+test_cases:
+  - test_case: premium member books a trip
+    fixtures:
+      - premium
+    steps:
+      - user: "I want to book a trip"
+      - utter: utter_ask_destination
+      - user: "Lisbon"
+      - slot_was_set:
+          - destination: "Lisbon"
+      - bot: "Great! I will book your trip to Lisbon. You saved 20% as a premium member."
+```
+
+Fixtures set before `action_session_start`, so the slots are available from the very first turn.
+
+### Fixture hierarchy with conftest files
+
+For larger test suites, define shared fixtures in a `conftest.yml` file at the root of your tests directory. Any test file under that directory can reference those fixtures without re-defining them:
+
+```
+tests/
+  conftest.yml        # fixtures available to all tests
+  e2e_test_cases.yml
+  admin/
+    conftest.yml      # fixtures available only to tests in admin/
+    admin_tests.yml
+```
+
+Fixtures defined in a file closer to the test take precedence over those defined higher up.
+
+### Mocking datetime for deterministic tests
+
+If your assistant uses datetime-aware LLM components, set the `mocked_datetime` slot in a fixture to ensure tests produce the same results regardless of when they run:
+
+```yaml
+fixtures:
+  - fixed_date:
+      - mocked_datetime: "2025-01-15T10:30:00"
+
+test_cases:
+  - test_case: appointment booking uses mocked date
+    fixtures:
+      - fixed_date
+    steps:
+      - user: Can I book an appointment tomorrow?
+      - bot: I can help you book an appointment for Thursday, January 16, 2025.
+```
+
+## Stubbing custom actions
+
+By default, E2E tests call your running action server. If you want to isolate tests from external API calls, define stubs at the top level of your test file. Stubs specify the events and responses a custom action would return without actually invoking the action server.
+
+Enable the beta feature first:
+
+```bash
+export RASA_PRO_BETA_STUB_CUSTOM_ACTION=true
+```
+
+Then define stubs in your test file:
+
+```yaml
+stub_custom_actions:
+  check_balance:
+    events:
+      - event: slot
+        name: account_balance
+        value: 1000
+    responses:
+      - text: "Your account balance is 1000."
+
+test_cases:
+  - test_case: user checks balance
+    steps:
+      - user: What's my balance?
+      - bot: "Your account balance is 1000."
+```
+
+To use different stub responses for different test cases, use the `test_case_id::action_name` naming convention:
+
+```yaml
+stub_custom_actions:
+  test_balance_positive::check_balance:
+    events:
+      - event: slot
+        name: account_balance
+        value: 1000
+    responses:
+      - text: "Your account balance is 1000."
+  test_balance_empty::check_balance:
+    events:
+      - event: slot
+        name: account_balance
+        value: 0
+    responses:
+      - text: "Your account balance is empty."
+```
+
+## Running tests
+
+Run all test cases in your `tests` directory:
+
+```bash
+rasa test e2e
+```
+
+Run a specific file or subdirectory:
+
+```bash
+rasa test e2e tests/payments/
+```
+
+Run tests against a live action server in the background:
+
+```bash
+rasa run actions &
+rasa test e2e
+```
+
+## Interpreting results
+
+The CLI prints a summary after each run. Passing tests are listed first; failing tests include a diff showing the expected versus actual events along with the line number in the test file and a transcript of the conversation up to the failure point.
+
+When you use assertions, the runner also produces an accuracy summary grouped by assertion type—for example, what percentage of `slot_was_set` assertions passed versus what percentage of `flow_completed` assertions passed. Use this breakdown to understand which kinds of checks are most fragile and where to focus improvement work.
+
+<Tip>
+  If a test fails intermittently because of LLM non-determinism, try narrowing the assertion rather than removing it. For example, use `generative_response_is_relevant` with a lower threshold instead of an exact `bot:` match.
+</Tip>
+
+## Converting conversations to tests
+
+If you have existing conversation logs or design documents in CSV or XLSX format, you can generate an initial test file automatically:
+
+```bash
+rasa data convert e2e <path-to-sample-conversations> -o tests/
+```
+
+Always review the generated tests and add assertions to make them meaningful. Auto-generated tests are a starting point, not a finished test suite.
+
+## Coverage reports
+
+Use coverage reports to find flows and commands that your tests don't yet reach:
+
+```bash
+rasa test e2e --coverage-report
+```
+
+By default, results print to stdout and are saved in `e2e_coverage_results/`. The report includes:
+
+- **Flow coverage**: percentage of flow steps covered, with line numbers for missing steps
+- **Command coverage**: histogram of commands triggered during the test run
+- **Passed/failed test lists**: `passed.yml` and `failed.yml` for easy triage
+
+```
+Flow Name                                   Coverage  Num Steps  Missing Steps
+data/flows/transfer_money.yml::transfer_money  80.00%       5          1  [15-22]
+data/flows/check_balance.yml::check_balance     0.00%       2          2  [6-7]
+                                         Total  40.00%       7          3
+```
+
+Flows with 0% coverage should be your first priority for new test cases.

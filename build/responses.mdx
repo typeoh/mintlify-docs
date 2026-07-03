@@ -1,0 +1,251 @@
+---
+title: "Defining Assistant Responses: Text, Buttons, and Images"
+sidebarTitle: "Responses"
+description: "Learn how to define text, button, image, and custom responses in your domain file, use slot variables, and enable LLM-based response rephrasing."
+---
+
+Responses are the messages your assistant sends back to users. You define them in the `responses` section of your `domain.yml` file (or in a dedicated `responses.yml`), and Rasa sends them at the appropriate points in a conversation. Every response name must start with `utter_`. When a response name starts with `utter_`, Rasa can use it directly as a flow action step without adding it to the `actions` section of your domain.
+
+```yaml domain.yml
+responses:
+  utter_greet:
+    - text: "Hi there! How can I help you today?"
+  utter_goodbye:
+    - text: "Goodbye! Have a great day."
+```
+
+## The `utter_ask_<slot_name>` Convention
+
+When your flow contains a `collect` step, Rasa automatically looks for a response named `utter_ask_<slot_name>` to prompt the user. For example, a `collect: account_type` step uses `utter_ask_account_type`:
+
+```yaml domain.yml
+responses:
+  utter_ask_account_type:
+    - text: "What type of account would you like to open? (checking, savings, money market, or IRA)"
+```
+
+You can override this with the `utter` property on the `collect` step itself, or replace the response entirely with a `action_ask_<slot_name>` custom action for dynamic prompts.
+
+## Response Types
+
+<Tabs>
+  <Tab title="Text">
+    The simplest response is plain text. You can also provide multiple variations — Rasa picks one at random.
+
+    ```yaml domain.yml
+    responses:
+      utter_greet:
+        - text: "Hey, {name}! How can I help you today?"
+        - text: "Hello, {name}! What can I do for you?"
+    ```
+  </Tab>
+  <Tab title="Buttons">
+    Add a `buttons` list to give users clickable choices. Each button needs a `title` (displayed text) and a `payload` (message sent when clicked).
+
+    ```yaml domain.yml
+    responses:
+      utter_ask_account_type:
+        - text: "What type of account would you like to open?"
+          buttons:
+            - title: "Checking"
+              payload: "/SetSlots(account_type=checking)"
+            - title: "Savings"
+              payload: "/SetSlots(account_type=savings)"
+            - title: "Money Market"
+              payload: "/SetSlots(account_type=money_market)"
+    ```
+
+    <Tip>
+      Button payloads can trigger intents (`/intent_name`), pass entities, or issue `SetSlots` commands. Use `SetSlots` when you want to pre-fill one or more slots from a button click.
+    </Tip>
+  </Tab>
+  <Tab title="Images">
+    Attach an image to a response by providing a URL under the `image` key.
+
+    ```yaml domain.yml
+    responses:
+      utter_cheer_up:
+        - text: "Here's something to brighten your day!"
+          image: "https://example.com/happy-image.jpg"
+    ```
+  </Tab>
+  <Tab title="Custom payloads">
+    Send any JSON structure to your output channel using the `custom` key. This is useful for channel-specific rich components such as date pickers or carousels.
+
+    ```yaml domain.yml
+    responses:
+      utter_pick_date:
+        - custom:
+            blocks:
+              - type: section
+                text:
+                  text: "When would you like your appointment?"
+                  type: mrkdwn
+                accessory:
+                  type: datepicker
+                  initial_date: "2025-01-01"
+                  placeholder:
+                    type: plain_text
+                    text: "Select a date"
+    ```
+  </Tab>
+</Tabs>
+
+## Variable Interpolation
+
+Insert slot values into response text by wrapping the slot name in curly braces. Rasa automatically fills the variable with the current slot value when the response is sent. If the slot is empty, the variable is replaced with `None`.
+
+```yaml domain.yml
+responses:
+  utter_confirm_transfer:
+    - text: "You're about to send ${amount} to {recipient}. Shall I proceed?"
+```
+
+You can also supply variables programmatically from a custom action:
+
+```python actions.py
+dispatcher.utter_message(
+    template="utter_confirm_transfer",
+    amount="50.00",
+    recipient="Alice"
+)
+```
+
+## Response Variations
+
+Providing multiple variations under the same response name keeps your assistant from sounding repetitive. Rasa picks one at random each time the response is triggered.
+
+```yaml domain.yml
+responses:
+  utter_ask_anything_else:
+    - text: "Is there anything else I can help you with?"
+    - text: "What else can I do for you today?"
+    - text: "Is there something else on your mind?"
+```
+
+## Conditional Response Variations
+
+Select a specific variation based on slot values using the `condition` key. Write conditions as predicate expressions using the `slots.` namespace.
+
+```yaml domain.yml
+responses:
+  utter_greet:
+    - condition: slots.prior_visits > 1
+      text: "Welcome back, {name}! Great to see you again."
+    - condition: not slots.prior_visits
+      text: "Welcome! How can I help you today?"
+    - text: "Hello! What can I do for you?"  # default fallback
+```
+
+<Warning>
+  Always include at least one variation without a `condition`. If no conditional variation matches and there is no default, Rasa responds with the internal error utterance.
+</Warning>
+
+## Channel-Specific Variations
+
+Tailor responses per channel by adding the `channel` key to a variation. Rasa tries channel-specific variations first, then falls back to variations without a `channel` specified.
+
+```yaml domain.yml
+responses:
+  utter_ask_rating:
+    - text: "How would you rate your experience? Use ⭐ to ⭐⭐⭐⭐⭐"
+      channel: "slack"
+    - text: "How would you rate your experience on a scale of 1 to 5?"
+```
+
+## Multi-Language Responses
+
+To support multiple languages, you can organise responses into separate domain or response files per locale and load the correct file based on your deployment configuration. For each language, define the same response names with localised text:
+
+```yaml domain_en.yml
+responses:
+  utter_greet:
+    - text: "Hello! How can I help you?"
+```
+
+```yaml domain_de.yml
+responses:
+  utter_greet:
+    - text: "Hallo! Wie kann ich Ihnen helfen?"
+```
+
+## Contextual Response Rephraser
+
+The **Contextual Response Rephraser** uses an LLM to rephrase your static response templates into more natural, context-aware replies at runtime. The core behaviour of your assistant does not change — only the phrasing of its responses.
+
+### Enabling the rephraser
+
+Add the following to your `endpoints.yml`:
+
+```yaml endpoints.yml
+nlg:
+  type: rephrase
+```
+
+### Rephrasing specific responses
+
+By default, only responses that opt in are rephrased. Add `rephrase: True` to a response's metadata:
+
+```yaml domain.yml
+responses:
+  utter_out_of_scope:
+    - text: "I'm not sure how to help with that. Type 'help' for assistance."
+      metadata:
+        rephrase: True
+```
+
+### Rephrasing all responses
+
+To enable rephrasing globally, set `rephrase_all: true` in `endpoints.yml`. You can then opt individual responses out with `rephrase: False` in their metadata.
+
+```yaml endpoints.yml
+nlg:
+  type: rephrase
+  rephrase_all: true
+```
+
+```yaml domain.yml
+responses:
+  utter_legal_disclaimer:
+    - text: "By continuing, you agree to our terms and conditions."
+      metadata:
+        rephrase: False   # keep this exact wording
+```
+
+### Configuring the LLM and temperature
+
+```yaml endpoints.yml
+nlg:
+  type: rephrase
+  rephrase_all: true
+  llm:
+    model_group: my_llm_group
+
+model_groups:
+  - id: my_llm_group
+    models:
+      - provider: openai
+        model: gpt-4o
+        temperature: 0.3
+```
+
+<Tip>
+  Keep the temperature low (0.2–0.4) to preserve the meaning of your responses. Higher temperatures produce more creative phrasing but risk altering the intent of the message.
+</Tip>
+
+## Using Responses from Custom Actions
+
+From inside a custom action, use the dispatcher to send a response by name:
+
+```python actions.py
+from rasa_sdk.interfaces import Action
+
+class ActionGreetUser(Action):
+    def name(self):
+        return "action_greet_user"
+
+    def run(self, dispatcher, tracker, domain):
+        name = tracker.get_slot("name")
+        dispatcher.utter_message(template="utter_greet", name=name)
+        return []
+```

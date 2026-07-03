@@ -1,0 +1,454 @@
+---
+title: "Rasa CLI Reference: All Commands and Options"
+sidebarTitle: "CLI Reference"
+description: "Complete reference for every rasa CLI command, including flags, templates, logging options, Studio sync commands, and MCP tool utilities."
+---
+
+The Rasa command-line interface is your primary tool for building, training, running, testing, and debugging assistants. Every `rasa` subcommand accepts `--help` to print the full list of flags. This page covers the most important commands and their options, including commands specific to Rasa Pro and Rasa Studio.
+
+<Note>
+On Windows, if you encounter character encoding errors like `UnicodeEncodeError: 'charmap' codec can't encode character`, prepend `winpty` to your command — for example, `winpty rasa init` instead of `rasa init`.
+</Note>
+
+## Quick Cheat Sheet
+
+Use this table as a rapid reminder. Each command is covered in detail in the sections below.
+
+| Command | What it does |
+|---|---|
+| `rasa init` | Scaffolds a new assistant project with example data and config |
+| `rasa train` | Trains your model from flows, NLU data, and domain |
+| `rasa shell` | Starts an interactive CLI chat with your trained model |
+| `rasa run` | Serves your trained model over HTTP |
+| `rasa run actions` | Starts the Rasa SDK action server |
+| `rasa test e2e` | Runs end-to-end acceptance tests |
+| `rasa inspect` | Opens the Rasa Inspector debugging UI |
+| `rasa data validate` | Validates flows, domain, NLU data for inconsistencies |
+| `rasa llm finetune prepare-data` | Prepares a fine-tuning dataset for LLM command generators |
+| `rasa license` | Displays license and third-party dependency information |
+| `rasa tools init` | Configures MCP tool integration for your IDE |
+| `rasa tools run` | Runs Rasa as an MCP server for IDE tooling |
+| `rasa -h` | Lists all available commands |
+| `rasa --version` | Shows version info and license expiry date |
+
+### Rasa Studio Commands
+
+| Command | Description |
+|---|---|
+| `rasa studio config` | Connects your CLI to a Rasa Studio deployment |
+| `rasa studio login` | Authenticates against your Studio instance |
+| `rasa studio upload` | Uploads your local assistant as a new Studio project |
+| `rasa studio download <name>` | Downloads a full assistant from Studio |
+| `rasa studio link <name>` | Links your local project to a specific Studio assistant |
+| `rasa studio push` | Pushes local changes up to Studio |
+| `rasa studio pull` | Pulls the latest Studio changes into your local project |
+| `rasa studio train` | Trains using merged local + Studio data |
+
+---
+
+## Core Commands
+
+<Accordion title="rasa init">
+
+`rasa init` scaffolds a complete assistant project, including example data, actions, and all required config files.
+
+```bash
+rasa init
+```
+
+By default this creates an NLU-based project. To start a CALM assistant instead, pass the `--template` flag:
+
+```bash
+# CALM assistant with flows and a sample custom action
+rasa init --template calm
+
+# Full codebase from the official CALM tutorial
+rasa init --template tutorial
+```
+
+**Default project structure**
+
+```
+.
+├── actions/
+│   ├── __init__.py
+│   └── actions.py
+├── config.yml
+├── credentials.yml
+├── data/
+│   ├── nlu.yml
+│   └── stories.yml
+├── domain.yml
+├── endpoints.yml
+├── models/
+│   └── <timestamp>.tar.gz
+└── tests/
+    └── test_stories.yml
+```
+
+After scaffolding, you can immediately run `rasa train`, `rasa shell`, and `rasa test` without any further setup.
+
+</Accordion>
+
+<Accordion title="rasa train">
+
+`rasa train` trains a model from your NLU data, flows, and domain, then writes the resulting archive to `./models/` by default.
+
+```bash
+rasa train
+```
+
+Rasa caches training results and only retrains the parts that have changed since the last run. For example, if you only edit NLU data, only the NLU pipeline is retrained.
+
+**Key flags**
+
+| Flag | Description |
+|---|---|
+| `--out <dir>` | Directory to save the trained model (default: `models/`) |
+| `--fixed-model-name <name>` | Save model with this name instead of a timestamp |
+| `--skip-validation` | Skip data validation before training |
+| `--fail-on-validation-warnings` | Treat validation warnings as errors |
+| `--domain <path>` | Path to a domain directory or file |
+
+**Train only NLU or dialogue**
+
+```bash
+rasa train nlu     # train only the NLU pipeline
+rasa train core    # train only the dialogue model
+```
+
+Run `rasa train --help` for the complete flag list.
+
+</Accordion>
+
+<Accordion title="rasa run">
+
+`rasa run` starts an HTTP server that exposes your trained model to channels and integrations.
+
+```bash
+rasa run
+```
+
+**Enabling HTTPS / SSL**
+
+```bash
+rasa run \
+  --ssl-certificate myssl.crt \
+  --ssl-keyfile myssl.key \
+  --ssl-password mypassword
+```
+
+**Key flags**
+
+| Flag | Description |
+|---|---|
+| `--port <n>` | Port to listen on (default: `5005`) |
+| `--ssl-certificate <path>` | Path to the SSL certificate file |
+| `--ssl-keyfile <path>` | Path to the SSL private key file |
+| `--ssl-password <str>` | Password for an encrypted key file |
+| `--connector <name>` | Connect to only this channel, ignoring others in credentials |
+| `-i <address>` | Bind to a specific network interface |
+
+**Connect to a single channel**
+
+```bash
+rasa run --connector rest
+```
+
+Run `rasa run --help` for the full list.
+
+</Accordion>
+
+<Accordion title="rasa run actions">
+
+`rasa run actions` starts the Rasa SDK action server so your assistant can execute custom Python actions.
+
+```bash
+rasa run actions
+```
+
+By default, the action server listens on port `5055`. Run `rasa run actions --help` for the full argument list including port and path overrides.
+
+</Accordion>
+
+<Accordion title="rasa shell">
+
+`rasa shell` loads your most recently trained model and lets you chat with it in the terminal — useful for quick sanity checks during development.
+
+```bash
+rasa shell
+```
+
+To increase logging verbosity while chatting:
+
+```bash
+rasa shell --debug
+```
+
+**Notes**
+
+- Use `--model <path>` to load a specific model file instead of the latest.
+- The `--connector` flag is always set to `cmdline`; any other connector value you pass will be ignored.
+- To trigger the session start greeting explicitly, send `/session_start` as your first message.
+- To inspect only NLU output (intents and entities) without dialogue:
+
+```bash
+rasa shell nlu
+```
+
+Run `rasa shell --help` for the full argument list.
+
+</Accordion>
+
+<Accordion title="rasa inspect">
+
+`rasa inspect` opens the Rasa Inspector — an interactive browser-based debugging tool that lets you step through conversations, inspect dialogue state, and view slot values in real time.
+
+```bash
+rasa inspect
+```
+
+To use the next-generation Inspector UI:
+
+```bash
+rasa inspect --nextgen
+```
+
+Run `rasa inspect --help` for the full argument list.
+
+</Accordion>
+
+<Accordion title="rasa test e2e">
+
+`rasa test e2e` runs end-to-end test cases against your assistant, exercising dialogue management and custom actions together as acceptance tests.
+
+```bash
+rasa test e2e
+```
+
+By default, Rasa looks for test cases in `tests/e2e_test_cases.yml`. Pass a path to override:
+
+```bash
+rasa test e2e tests/my_e2e_tests/
+```
+
+**Key flags**
+
+| Flag | Description |
+|---|---|
+| `--model <path>` | Path to the trained model to test against |
+| `--fail-fast` | Stop on the first test failure |
+| `-o <path>` | Export test results to a file (defaults to `tests/`) |
+| `-f <path>` | Export only failed tests to a file for re-running |
+| `--coverage-report` | Generate a report showing flow step coverage |
+| `--coverage-output-path <path>` | Output directory for the coverage report |
+| `--endpoints <path>` | Path to `endpoints.yml` |
+| `--remote-storage <location>` | Load model from remote cloud storage |
+
+**Coverage report (beta)**
+
+```bash
+RASA_PRO_BETA_FINE_TUNING_RECIPE=true rasa test e2e --coverage-report
+```
+
+Run `rasa test e2e --help` for the complete list.
+
+</Accordion>
+
+<Accordion title="rasa data validate">
+
+`rasa data validate` checks your project data — flows, domain, and NLU — for inconsistencies before you commit to a full training run.
+
+```bash
+rasa data validate
+```
+
+Common issues caught include undefined slot references, missing action registrations, and conflicting response names. Run `rasa data validate --help` for all options.
+
+</Accordion>
+
+<Accordion title="rasa llm finetune prepare-data">
+
+`rasa llm finetune prepare-data` generates a training dataset from your E2E test cases that you can use to fine-tune a base model as a specialized command generator.
+
+```bash
+rasa llm finetune prepare-data <path-to-e2e-test-cases>
+```
+
+<Note>
+This command is a **beta** feature. Set the environment variable `RASA_PRO_BETA_FINETUNING_RECIPE=true` to enable it before running.
+</Note>
+
+Run `rasa llm finetune prepare-data --help` for all options.
+
+</Accordion>
+
+<Accordion title="rasa license">
+
+`rasa license` displays licensing information for Rasa Pro, including details about all third-party dependency licenses.
+
+```bash
+rasa license
+```
+
+Run `rasa license --help` for additional options.
+
+</Accordion>
+
+<Accordion title="rasa tools init / rasa tools run">
+
+The `rasa tools` commands integrate Rasa with IDE AI assistants (Claude Code, Cursor, VS Code, JetBrains) via the Model Context Protocol (MCP).
+
+**Initialize MCP tooling for your project**
+
+```bash
+rasa tools init
+```
+
+This sets up your project and prints IDE-specific instructions for connecting Rasa as an MCP server.
+
+**Start Rasa as an MCP server**
+
+```bash
+rasa tools run
+```
+
+**Check current project configuration and runtime readiness**
+
+```bash
+rasa tools status
+```
+
+</Accordion>
+
+---
+
+## Rasa Studio Commands
+
+Before using Studio commands, you need to configure and authenticate once:
+
+<Steps>
+  <Step title="Connect to your Studio deployment">
+    ```bash
+    rasa studio config
+    ```
+    This prompts you for your Studio instance URL and saves the config to `$HOME/.config/rasa/global.yml`. For custom authentication settings, use `rasa studio config --advanced`.
+  </Step>
+  <Step title="Authenticate">
+    ```bash
+    rasa studio login --username my_user --password my_password
+    ```
+  </Step>
+  <Step title="Upload or download your assistant">
+    ```bash
+    # Upload a new CALM assistant
+    rasa studio upload --calm
+
+    # Download an existing assistant
+    rasa studio download my_assistant_name
+    ```
+  </Step>
+  <Step title="Link for ongoing sync">
+    ```bash
+    rasa studio link my_assistant_name
+    ```
+    Once linked, `push` and `pull` commands automatically target this assistant.
+  </Step>
+  <Step title="Push and pull changes">
+    ```bash
+    rasa studio push          # push all local changes
+    rasa studio push config   # push only config section
+
+    rasa studio pull          # pull all Studio changes
+    rasa studio pull config   # pull only config section
+    ```
+  </Step>
+</Steps>
+
+---
+
+## Logging and Verbosity
+
+### CLI log level flags
+
+Add these flags to any `rasa` command to increase verbosity:
+
+| Flag | Effect |
+|---|---|
+| `--verbose` / `-v` | Set log level to `INFO` |
+| `--debug` / `-vv` | Set log level to `DEBUG` |
+
+### Log level environment variables
+
+You can fine-tune logging for specific libraries without changing the global CLI level. These follow standard [Python logging levels](https://docs.python.org/3/library/logging.html#logging-levels) (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`).
+
+| Variable | Scope |
+|---|---|
+| `LOG_LEVEL` | Global Rasa log level |
+| `LOG_LEVEL_LIBRARIES` | All third-party libraries (TensorFlow, asyncio, SocketIO, etc.) |
+| `LOG_LEVEL_MATPLOTLIB` | Matplotlib only |
+| `LOG_LEVEL_RABBITMQ` | RabbitMQ / AMQP libraries |
+| `LOG_LEVEL_KAFKA` | Kafka library |
+| `LOG_LEVEL_PYMONGO` | PyMongo library |
+| `LOG_LEVEL_PRESIDIO` | Presidio PII libraries |
+| `LOG_LEVEL_MLFLOW` | MLFlow library |
+
+The CLI `--debug` / `--verbose` flag sets the **root** log level. Library-level variables are limited by that ceiling. For example:
+
+```bash
+# Shows DEBUG for Kafka, WARNING for Matplotlib, ERROR for other libs
+LOG_LEVEL_LIBRARIES=ERROR LOG_LEVEL_MATPLOTLIB=WARNING LOG_LEVEL_KAFKA=DEBUG rasa shell --debug
+```
+
+### LLM component log level variables
+
+Rasa exposes per-component LLM logging so you can isolate prompt/response debug output:
+
+```bash
+export LOG_LEVEL_LLM=INFO                      # all LLM components
+export LOG_LEVEL_LLM_COMMAND_GENERATOR=DEBUG   # command generators only
+export LOG_LEVEL_LLM_ENTERPRISE_SEARCH=DEBUG   # EnterpriseSearchPolicy
+export LOG_LEVEL_LLM_INTENTLESS_POLICY=INFO    # IntentlessPolicy
+export LOG_LEVEL_LLM_REPHRASER=INFO            # ContextualResponseRephraser
+export LOG_LEVEL_NLU_COMMAND_ADAPTER=INFO      # NLU command adapter
+export LOG_LEVEL_LLM_BASED_ROUTER=INFO         # LLMBasedRouter
+```
+
+### Custom logging configuration file
+
+You can supply a YAML logging config file that follows [Python's dictionary schema](https://docs.python.org/3/library/logging.config.html#dictionary-schema-details):
+
+```bash
+rasa shell --logging-config-file logging_config.yml
+```
+
+Example `logging_config.yml`:
+
+```yaml
+version: 1
+disable_existing_loggers: false
+formatters:
+  customFormatter:
+    format: '{"time": "%(asctime)s", "name": "[%(name)s]", "levelname": "%(levelname)s", "message": "%(message)s"}'
+handlers:
+  console:
+    class: logging.StreamHandler
+    level: INFO
+    formatter: customFormatter
+    stream: ext://sys.stdout
+  file:
+    class: logging.FileHandler
+    filename: "rasa_debug.log"
+    level: DEBUG
+    formatter: customFormatter
+loggers:
+  root:
+    handlers: [console]
+  rasa:
+    handlers: [file]
+    propagate: 0
+```
+
+<Tip>
+If you encounter `BlockingIOError` when running `rasa shell --debug` (a known issue in Rasa Pro 3.9), use a custom logging config file as shown above to work around it.
+</Tip>

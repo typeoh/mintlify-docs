@@ -1,0 +1,145 @@
+---
+title: "What You Can Build with Rasa: Use Cases & Examples"
+sidebarTitle: "Use Cases"
+description: "Explore what you can build with Rasa: high-trust task assistants, real-time voice bots, multilingual support agents, and fully custom AI systems."
+---
+
+Rasa is purpose-built for the kinds of conversations that matter most to businesses — the ones involving real decision-making, multiple back-and-forth turns, and business logic that cannot afford to go wrong. This page walks through the core use cases where Rasa shines, along with concrete examples of the conversation patterns it handles automatically.
+
+## High-trust, fluent AI assistants
+
+Real users rarely give you all the information you need up front. They change their minds, ask tangential questions, give ambiguous answers, and circle back to things they said earlier. A Rasa assistant handles all of that naturally, out of the box.
+
+CALM already understands how conversations work. It automatically manages disambiguation, topic changes, clarification, corrections, implicatures, negation, and interjections — without you needing to write rules for every scenario. At the same time, your business logic executes deterministically. No matter how the user phrases their request, Rasa will faithfully follow the steps you defined.
+
+Here are the conversation patterns CALM handles automatically:
+
+<AccordionGroup>
+  <Accordion title="Clarification — when multiple flows could match">
+    When a user's message could apply to more than one flow, Rasa automatically asks a clarifying question rather than guessing.
+
+    ```text
+    User: I lost my wallet.
+    Bot:  Do you want to freeze your card or cancel it?
+    ```
+  </Accordion>
+
+  <Accordion title="Implicit answers — reading between the lines">
+    Users often answer questions indirectly. Rasa interprets the intent behind the words, not just the literal content.
+
+    ```text
+    Bot:  Would you like to add anything else to your order?
+    User: I've spent too much already!
+    ```
+
+    Rasa sets `continue_shopping` to `False` and moves on with checkout — no explicit "no" required.
+  </Accordion>
+
+  <Accordion title="Topic changes — switching flows and coming back">
+    Users frequently jump to a different topic mid-conversation. Rasa handles the detour and picks up where it left off.
+
+    ```text
+    User: I want to pay my credit card bill.
+    Bot:  Do you want to pay the whole balance of $3,421?
+    User: How much do I have in my account?
+
+    💡 Rasa switches to the balance-check flow
+
+    Bot:  Your checking account balance is $1,304.21.
+          Now, how much would you like to pay into your credit card?
+    ```
+  </Accordion>
+
+  <Accordion title="Change of mind — correcting earlier answers">
+    If a user wants to revise something they said earlier in the conversation, Rasa handles the correction cleanly.
+
+    ```text
+    User: I need to send $50.
+    Bot:  Who would you like to send money to?
+    User: Jen.
+    Bot:  Please confirm: transfer $50.00 to Jen?
+    User: Actually, no — $60.
+
+    💡 Rasa updates the amount slot
+
+    Bot:  Got it. Please confirm: transfer $60.00 to Jen?
+    User: Yes.
+    Bot:  All done. $60.00 has been sent to Jen.
+    ```
+  </Accordion>
+
+  <Accordion title="Interjections — answering a question mid-flow">
+    Users sometimes interrupt a flow to ask a quick question. Rasa answers it and resumes the original task.
+
+    ```text
+    Bot:  Would you like that gift wrapped?
+    User: How much is that?
+
+    💡 Rasa consults the knowledge base
+
+    Bot:  As your order is over $25, gift-wrapping is free!
+          Shall I go ahead and get it wrapped?
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Real-time voice assistants that take action
+
+Rasa handles the full stack of spoken conversation, including natural pause and turn-taking, DTMF processing for phone menus, and call-control commands. You can connect it to speech recognition services and contact-center systems to automate call-center operations end to end.
+
+Rasa's dialogue approach also means you can run accurate voice assistants on smaller, self-hostable language models (under 10B parameters). These models respond fast enough for real-time voice without requiring expensive hosted inference — which matters when every second of latency affects user satisfaction.
+
+<Tip>
+  Rasa's fine-tuned Llama 8B model can match the accuracy of much larger LLMs for dialogue understanding, making self-hosted voice deployments practical at scale.
+</Tip>
+
+## Multilingual, personalized support assistants
+
+Each customer interaction is different. Language, location, subscription tier, and recent activity all shape what a helpful response looks like. Rasa lets you load real-time contextual data about the user and use it to personalize every response.
+
+The following example shows three users sending the same message — and receiving a response tailored to each of them:
+
+```text
+User (Anisha):   You messed up my order.
+Bot:             Hi, Anisha! I'm sorry to hear that. I can see two recent
+                 orders — was the problem with the umbrella or the kitchenware?
+
+User (Alex):     You messed up my order.
+Bot:             Hi, Alex! I'm sorry to hear that. What was the issue with
+                 your microwave? I can see you ordered the Combi Microwave
+                 800W in Black.
+
+User (Ricardo):  😡
+Bot:             Ricardo, je suis désolé d'apprendre que tu es malheureux.
+                 Comment puis-je t'aider ?
+```
+
+As you scale across departments and languages, Rasa gives you:
+
+- A **centralized content hub** for managing translations and localization in one place
+- **Reusable dialog components** that work across languages without duplication
+- **Collaborative workflows** so your team can review and update assistant versions together
+
+You can cover the full breadth of support requests in a single assistant — order status, refunds, subscription management, product search, appointments, complaints, and more — without the assistant becoming unmanageable.
+
+## Custom, controllable conversational AI
+
+Some organizations cannot use cloud-based AI services due to data privacy requirements, regulatory constraints, or security policy. Rasa is built for exactly those situations.
+
+With Rasa, you can:
+
+- Keep **all processing on your own infrastructure** — nothing leaves your network
+- Get **full visibility into every decision** the assistant makes, with structured, traceable paths from input to output
+- **Override and customize** any component in the AI pipeline
+- Build **deep integrations** with your existing enterprise systems, databases, and APIs
+- Use a **CI/CD-driven deployment workflow** with version control, automated tests, and rollback support
+
+Concretely, this means you can:
+
+- **Self-host fine-tuned language models** optimized for your domain and vocabulary
+- **Add custom pipeline components** to modify how messages are processed, classified, or responded to
+- **Build native integrations** with mobile apps, CRMs, ticketing systems, and internal tools
+
+<Note>
+  Ready to see what Rasa can do in your environment? Start with the [Quick Start guide](/get-started/quickstart) to get a working agent running in minutes, or explore the [Platform Overview](/get-started/platform-overview) to understand how the full development lifecycle works.
+</Note>

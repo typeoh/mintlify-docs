@@ -1,0 +1,125 @@
+---
+title: "Get Started with Rasa: Build Your First Agent"
+sidebarTitle: "Quick Start"
+description: "Build and run your first Rasa Pro agent in minutes — get a license, install Rasa, connect MCP tools to your IDE, and start building with prompts."
+---
+
+This guide takes you from zero to a running Rasa agent as quickly as possible. You will get a free license, install Rasa Pro, connect Rasa MCP Tools to your IDE, and build your first agent — all in a single session. Each step builds on the last, so work through them in order.
+
+<Steps>
+  <Step title="Get a free license">
+    Rasa requires a license key to run. The Developer Edition is completely free and covers up to 1,000 conversations per month — more than enough to build and experiment locally.
+
+    [Request your free Developer Edition license key](https://rasa.com/rasa-pro-developer-edition-license-key-request/) and keep it handy for the next step.
+
+    <Note>
+      The Developer Edition license has no time limit. You can use it for as long as you are building and testing locally. See the [Licensing page](/get-started/licensing) for details on upgrading to an Enterprise license for production deployments.
+    </Note>
+  </Step>
+
+  <Step title="Create a project and install Rasa Pro">
+    Rasa Pro is distributed as the `rasa-pro` Python package. The fastest way to install it is with [uv](https://docs.astral.sh/uv/getting-started/installation/), a modern Python package manager. If you do not have `uv` installed yet, [get it here](https://docs.astral.sh/uv/getting-started/installation/) before continuing.
+
+    Run the following commands in your terminal to create a new project directory, set up a virtual environment, install Rasa, and initialize a starter project:
+
+    ```bash
+    mkdir rasa-agent && cd rasa-agent
+    uv venv --python 3.11
+    source .venv/bin/activate
+    uv pip install rasa-pro
+    rasa init --template=basic
+    ```
+
+    <Note>
+      On Windows, activate the virtual environment with `.venv\Scripts\activate` instead of the `source` command above.
+    </Note>
+
+    Next, set your environment variables. Rasa reads your license from `RASA_LICENSE`, and the default project template uses OpenAI as the LLM provider:
+
+    ```bash
+    export RASA_LICENSE=YOUR_LICENSE_KEY
+    export OPENAI_API_KEY=YOUR_API_KEY
+    ```
+
+    <Tip>
+      The basic template uses OpenAI by default. To use a different LLM provider (Anthropic, Azure OpenAI, Gemini, etc.), define a [model group](https://rasa.com/docs/reference/config/components/llm-configuration/#model-groups) in `endpoints.yml` and reference it via `model_group` in `config.yml`.
+    </Tip>
+  </Step>
+
+  <Step title="Connect Rasa MCP Tools to your IDE">
+    Rasa MCP Tools are included in Rasa Pro 3.16 and later. They expose your Rasa project to your IDE's AI assistant (Cursor, VS Code, Claude Code, JetBrains), letting you inspect, build, validate, train, and test your agent using natural language prompts.
+
+    Run the setup wizard from your project root:
+
+    ```bash
+    rasa tools init
+    ```
+
+    The wizard automatically:
+    - Creates `.rasa/tools.yaml` with server configuration
+    - Downloads offline documentation and Rasa-specific skills
+    - Generates the correct MCP configuration file for your IDE
+
+    <Warning>
+      Always open your IDE from your **project root directory** so Rasa Tools can locate `.rasa/tools.yaml`. If you open from a parent folder, the tools will not find your project configuration.
+    </Warning>
+
+    After the wizard finishes, open your IDE and check that `rasa-tools` appears in your MCP settings. If it is not enabled, toggle it on. If the wizard did not configure your IDE automatically, you can run the MCP server manually:
+
+    ```bash
+    rasa tools run
+    ```
+
+    For manual setup instructions tailored to specific IDEs — **Cursor**, **VS Code**, **Claude Code**, and **JetBrains** — see the [Rasa MCP Tools guide](https://rasa.com/docs/pro/installation/rasa-mcp-tools/).
+  </Step>
+
+  <Step title="Train your agent">
+    With your environment set up, train your agent's model:
+
+    ```bash
+    rasa train
+    ```
+
+    Training compiles your flows and configuration into a model file that Rasa uses at runtime. You will need to retrain whenever you change your flows, NLU data, or configuration.
+  </Step>
+
+  <Step title="Test it in the inspector">
+    Launch the Rasa inspector to start a live conversation with your agent in a local web UI:
+
+    ```bash
+    rasa inspect
+    ```
+
+    The inspector lets you send messages, watch how the assistant navigates your flows, and inspect the slots it collects in real time. It is also the interface the MCP runtime tools (`talk_to_assistant`, `get_assistant_logs`) connect to when you run tests from your IDE.
+  </Step>
+
+  <Step title="Build your first agent with AI assistance">
+    With Rasa MCP Tools connected, you can use your IDE's AI assistant to help you design and extend your agent. Open a copilot chat and try this prompt to get started:
+
+    ```text
+    Use Rasa MCP tools to inspect this project and briefly summarize what it does
+    in a few sentences. Then propose 3 fun, concrete verticals — think book
+    recommendation, flight booking, or concierge — not "more of the same template."
+    For each: one-line pitch, 2 user stories, what you'd add (flows/slots/APIs/
+    sub-agents/MCP servers), effort S/M/L.
+    ```
+
+    Pick the vertical you like best — or suggest your own — and ask the copilot to help you build it out using the Rasa tools.
+  </Step>
+</Steps>
+
+## What's next
+
+Now that your agent is running, explore these resources to go deeper:
+
+<CardGroup cols={3}>
+  <Card title="Platform Overview" icon="map" href="/get-started/platform-overview">
+    Understand the full build → test → deploy → review lifecycle.
+  </Card>
+  <Card title="Licensing" icon="key" href="/get-started/licensing">
+    Learn about Developer Edition limits and Enterprise options.
+  </Card>
+  <Card title="Installation" icon="download" href="/get-started/installation">
+    Explore Python and Docker installation options and system requirements.
+  </Card>
+</CardGroup>

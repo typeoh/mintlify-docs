@@ -1,0 +1,125 @@
+---
+title: "Testing Your Rasa Assistant: E2E and Qualitative Methods"
+sidebarTitle: "Testing Overview"
+description: "Learn the two testing approaches for Rasa assistants—qualitative inspection and automated E2E tests—and how to use them together across your development lifecycle."
+---
+
+Building a reliable conversational AI assistant requires a layered testing strategy. Rasa gives you two complementary approaches: qualitative inspection, where you explore live conversations step by step to understand how flows and the LLM behave, and quantitative end-to-end (E2E) tests, where you automate entire conversation scenarios and measure whether your assistant responds exactly as expected. Using both together gives you fast feedback during development and a safety net that prevents regressions as your assistant evolves.
+
+## Two testing approaches
+
+<CardGroup cols={2}>
+  <Card title="E2E Tests" icon="flask" href="./e2e-tests">
+    Automate full conversation scenarios in YAML files. Run them locally or in CI/CD to catch regressions before they reach production.
+  </Card>
+  <Card title="Inspector" icon="magnifying-glass" href="./inspector">
+    Explore conversations interactively in your browser. Watch flows activate, slots fill, and LLM commands fire in real time.
+  </Card>
+</CardGroup>
+
+### Qualitative evaluation with the Inspector
+
+The Inspector is a browser-based debugging tool you launch with `rasa inspect`. It lets you chat with your assistant in real time while watching the flow visualization, stack trace, slot values, and LLM-generated commands update after every turn. Use it when you want to:
+
+- Explore how a new flow behaves before writing formal tests
+- Debug an unexpected response or slot value during development
+- Demonstrate assistant behavior to stakeholders or teammates
+- Test voice interactions using the `--voice` flag
+
+The Inspector is designed for human-in-the-loop exploration. It surfaces the internal mechanics of your assistant—which flow is active, which step is current, what commands the LLM generated—so you can quickly understand what is happening and why.
+
+### Quantitative evaluation with E2E tests
+
+End-to-end tests define complete conversation scenarios in YAML files. Each test case specifies a sequence of user messages and expected bot responses, slot values, flow events, and assertions. You run them with `rasa test e2e` and receive a structured pass/fail report. Use E2E tests when you want to:
+
+- Verify that a flow works correctly from start to finish
+- Confirm slot extraction is accurate for a range of user phrasings
+- Assert that generative responses are relevant or factually grounded
+- Prevent regressions when you modify flows, prompts, or custom actions
+
+Unlike qualitative inspection, E2E tests are fully automated and reproducible. They are the right tool for CI/CD pipelines and for maintaining confidence as your assistant grows.
+
+## When to use each approach
+
+| Situation | Use Inspector | Use E2E Tests |
+|---|---|---|
+| Exploring a brand-new flow | ✅ | |
+| Debugging an unexpected bot response | ✅ | |
+| Verifying slot extraction accuracy | | ✅ |
+| Preventing regressions after changes | | ✅ |
+| Demonstrating behavior interactively | ✅ | |
+| Running checks in a CI/CD pipeline | | ✅ |
+| Testing voice interactions | ✅ | |
+| Measuring flow and command coverage | | ✅ |
+
+## The testing lifecycle
+
+Start writing E2E tests early—ideally alongside your flows, not after. Conversations you explore in the Inspector can be exported directly as E2E test cases using the built-in **End-2-End Test** panel, making it easy to capture real interactions and turn them into automated checks.
+
+<Steps>
+  <Step title="Validate your data structure">
+    Before training, run `rasa data validate` to catch structural errors in your flows, domain, and training data. This step is fast and should be part of every development workflow.
+
+    ```bash
+    rasa data validate
+    ```
+  </Step>
+  <Step title="Train your assistant">
+    Compile your flows, domain, and LLM configuration into a deployable model.
+
+    ```bash
+    rasa train
+    ```
+  </Step>
+  <Step title="Explore with Inspector">
+    Launch the Inspector to try out your flows interactively and verify behavior before writing formal tests.
+
+    ```bash
+    rasa inspect
+    ```
+  </Step>
+  <Step title="Write E2E tests">
+    Create `tests/e2e_test_cases.yml` and add test cases for every important user journey. Convert Inspector conversations into test cases where useful.
+  </Step>
+  <Step title="Run tests locally">
+    Run `rasa test e2e` to verify all test cases pass before committing your changes.
+
+    ```bash
+    rasa test e2e
+    ```
+  </Step>
+  <Step title="Automate in CI/CD">
+    Add `rasa data validate`, `rasa train`, and `rasa test e2e` to your CI/CD pipeline so every pull request is checked automatically.
+  </Step>
+  <Step title="Monitor in production">
+    Use Conversation Review in Rasa Studio to browse real user conversations. Tag gaps and edge cases, then add new E2E tests to cover them.
+  </Step>
+</Steps>
+
+## Structural validation
+
+Before training or running tests, always validate your project files. The `rasa data validate` command checks your flows, domain, training data, and configuration for structural errors—missing actions, undefined slots, unreachable flow steps, and similar issues.
+
+```bash
+rasa data validate
+```
+
+Fix any reported errors before proceeding to training. Catching structural problems early saves you from debugging mysterious failures during testing.
+
+<Tip>
+  Add `rasa data validate` as the first step in every CI/CD pipeline. It is fast, requires no model, and catches entire classes of errors before they become test failures.
+</Tip>
+
+## Coverage reporting
+
+Once you have a suite of E2E tests, use the coverage report to understand which flows and commands are not yet tested.
+
+```bash
+rasa test e2e --coverage-report
+```
+
+The report shows the percentage of flow steps covered by your tests and highlights missing steps by file and line number. Use it regularly to find gaps and prioritize where to add new tests.
+
+<Note>
+  Coverage metrics track both passing and failing tests separately. A flow that appears in failing tests is still considered partially covered—but fixing those tests is a higher priority than adding coverage for untested flows.
+</Note>

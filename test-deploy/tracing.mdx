@@ -1,0 +1,176 @@
+---
+title: "Distributed Tracing for Rasa: Jaeger, OTEL, and Langfuse"
+sidebarTitle: "Tracing"
+description: "Configure distributed tracing for your Rasa assistant with Jaeger, OpenTelemetry Collector, or Langfuse to debug slow responses and monitor LLM calls."
+---
+
+When a user sends a message to your Rasa assistant, that message travels through several components—the LLM command generator, flow logic, the custom action server, and potentially external APIs. Distributed tracing captures the full lifecycle of that request: every hop, every duration, every piece of metadata. This gives you a precise picture of where bottlenecks occur, why a particular response took longer than expected, and how your LLM calls are performing in production.
+
+## What tracing gives you
+
+Tracing answers questions that logs and aggregate metrics cannot:
+
+- **What exactly happened when the assistant processed a message?** See which flows were invoked, which commands the LLM generated, and which actions ran—in sequence.
+- **Why is my assistant slow?** Is the latency coming from the LLM call, the vector store lookup, or an external API call in your custom action?
+- **How can I optimize LLM costs?** Track prompt token usage, completion tokens, and latency per LLM call to identify the most expensive interactions.
+- **What happened in a specific failing conversation?** Correlate a conversation ID with its trace to reproduce and diagnose the issue.
+
+## Supported backends
+
+Rasa supports three tracing backends:
+
+<CardGroup cols={3}>
+  <Card title="Jaeger" icon="magnifying-glass">
+    Popular open-source distributed tracing system. Good choice if you already have Jaeger running in your infrastructure.
+  </Card>
+  <Card title="OpenTelemetry Collector" icon="arrows-split-up-and-left">
+    Vendor-agnostic collector that can forward traces to Jaeger, Zipkin, Datadog, or any OTLP-compatible backend.
+  </Card>
+  <Card title="Langfuse" icon="chart-bar">
+    LLM-focused observability platform. Provides in-depth analysis of each LLM call—prompts, outputs, token usage, and costs—per conversation turn.
+  </Card>
+</CardGroup>
+
+## Configuring tracing in endpoints.yml
+
+Add a `tracing:` block to your `endpoints.yml` to enable one or more tracing backends. Rasa emits traces automatically for conversation processing, LLM calls, flow transitions, and custom actions once tracing is configured—no additional code changes required.
+
+### Jaeger and Langfuse
+
+```yaml
+tracing:
+  - type: jaeger
+    host: localhost
+    port: 6831
+    service_name: rasa
+    sync_export: ~
+  - type: langfuse
+    host: https://cloud.langfuse.com
+    public_key: ${LANGFUSE_PUBLIC_KEY}
+    private_key: ${LANGFUSE_PRIVATE_KEY}
+```
+
+### OpenTelemetry Collector and Langfuse
+
+```yaml
+tracing:
+  - type: otlp
+    endpoint: my-otlp-host:4318
+    insecure: false
+    service_name: rasa
+    root_certificates: ./path/to/ca.pem
+  - type: langfuse
+    host: https://cloud.langfuse.com
+    public_key: ${LANGFUSE_PUBLIC_KEY}
+    private_key: ${LANGFUSE_PRIVATE_KEY}
+```
+
+Set the Langfuse credentials as environment variables:
+
+```bash
+export LANGFUSE_PUBLIC_KEY=pk-lf-...
+export LANGFUSE_PRIVATE_KEY=sk-lf-...
+```
+
+You can configure multiple backends simultaneously. For example, sending traces to both Jaeger (for infrastructure-level debugging) and Langfuse (for LLM call analysis) is a common production setup.
+
+## Adding custom spans in your action server
+
+For deeper visibility into custom action performance, you can add manual spans to specific sections of your code. This is especially useful for instrumenting external API calls, database lookups, or complex computation in your action server.
+
+```python
+from rasa_sdk import Action, Tracker
+from rasa_sdk.executor import CollectingDispatcher
+from opentelemetry import trace
+
+tracer = trace.get_tracer(__name__)
+
+class ActionCheckInventory(Action):
+    def name(self) -> str:
+        return "action_check_inventory"
+
+    def run(
+        self,
+        dispatcher: CollectingDispatcher,
+        tracker: Tracker,
+        domain: dict,
+    ) -> list:
+        product = tracker.get_slot("product")
+
+        with tracer.start_as_current_span("inventory_api_call") as span:
+            span.set_attribute("product", product)
+            # Call external inventory API
+            inventory_level = self.check_inventory_api(product)
+            span.set_attribute("inventory_level", inventory_level)
+
+        if inventory_level > 0:
+            dispatcher.utter_message(text=f"{product} is in stock.")
+        else:
+            dispatcher.utter_message(text=f"{product} is out of stock.")
+
+        return []
+
+    def check_inventory_api(self, product: str) -> int:
+        # Your API call here
+        return 42
+```
+
+The custom span appears nested inside the parent action span in your tracing UI, showing exactly how much time the external call consumed.
+
+## Best practices
+
+<Accordion title="Start tracing in development, not after production incidents">
+  Instrument your assistant from the start of development. Waiting until there is a production performance issue makes root cause analysis much harder because you lack the historical baseline to compare against.
+</Accordion>
+
+<Accordion title="Use Langfuse for LLM call analysis">
+  Rasa uses multiple LLM-based components that each contribute to a single conversation turn. Langfuse provides the best tooling for understanding LLM prompt content, token usage, and cost per call. Configure it alongside Jaeger or OTEL so you get both infrastructure traces and LLM-specific insights.
+
+  ```yaml
+  tracing:
+    - type: otlp
+      endpoint: otel-collector:4318
+      service_name: rasa
+    - type: langfuse
+      host: https://cloud.langfuse.com
+      public_key: ${LANGFUSE_PUBLIC_KEY}
+      private_key: ${LANGFUSE_PRIVATE_KEY}
+  ```
+</Accordion>
+
+<Accordion title="Focus custom spans on action server external calls">
+  Custom actions are the most common source of high latency. Use custom spans to wrap every external API call, database query, or third-party service call in your action code. This lets you pinpoint slow dependencies without guessing.
+</Accordion>
+
+<Accordion title="Use a single runtime trace collector">
+  Send traces to a single OTEL or Jaeger collector rather than multiple backends for runtime traces. Having all spans in one place is essential for diagnosing end-to-end issues where the bottleneck could be anywhere in the request path.
+</Accordion>
+
+<Accordion title="Combine tracing with metrics and logs">
+  Traces alone don't tell the whole story. Pair them with aggregate metrics (average response time, token usage per session) and structured logs (error messages, action failures) to get a complete view of system health. The combination of all three is what enables fast root-cause analysis.
+</Accordion>
+
+<Accordion title="Reduce trace verbosity in production">
+  Capturing detailed prompt content and token usage in production can add latency and cost. Consider enabling verbose tracing in staging environments to diagnose issues, then reducing detail in production once you have identified and fixed the root cause.
+</Accordion>
+
+## Observability metrics
+
+In addition to distributed tracing, Rasa collects metrics through the OpenTelemetry Collector. Enable metrics in `endpoints.yml`:
+
+```yaml
+metrics:
+  type: otlp
+  endpoint: my-otlp-host:4318
+  insecure: false
+  service_name: rasa
+```
+
+Rasa automatically collects:
+
+- **CPU and memory usage** of LLM-based command generators at call time
+- **Prompt token usage** for LLM components (when `trace_prompt_tokens` is enabled)
+- **Method call durations** for EnterpriseSearchPolicy, ContextualResponseRephraser, and command generators
+- **HTTP request durations and sizes** for calls to the action server and NLG server
+
+These metrics integrate with Prometheus, Datadog, or any other OTLP-compatible metrics backend your infrastructure already uses.

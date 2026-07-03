@@ -1,0 +1,155 @@
+---
+title: "Building Voice Assistants with Rasa: Speech and IVR"
+sidebarTitle: "Voice"
+description: "Build voice assistants with Rasa using Audiocodes, Jambonz, Twilio, and Genesys. Configure ASR, TTS, silence handling, DTMF input, and barge-in support."
+---
+
+Voice assistants let users interact with your Rasa assistant through spoken language rather than text. Rasa supports both **voice-ready** channels — where speech-to-text and text-to-speech are handled by the telephony platform — and **voice-stream** channels — where Rasa processes raw audio directly. Either way, the same CALM flows, slots, and actions you build for text also power your voice assistant, with a set of voice-specific primitives layered on top.
+
+<Note>
+  If you started with the Rasa Developer Edition before Rasa Pro 3.11, you need
+  to request a new license to access voice features. Licenses issued before this
+  version do not include the necessary feature scopes.
+</Note>
+
+## Voice channel types
+
+<CardGroup cols={2}>
+  <Card title="Voice Ready" icon="phone">
+    The telephony platform handles ASR and TTS. Rasa receives and sends text. Simpler to set up, and any Rasa text response works out of the box. Supported platforms: **Audiocodes VoiceAI Connect**, **Jambonz**, **Twilio Voice**.
+  </Card>
+  <Card title="Voice Stream" icon="waveform">
+    Rasa processes raw audio — transcribing incoming speech and synthesizing outgoing audio. Enables features like real-time barge-in and finer latency control. Supported platforms: **Twilio Media Streams**, **Audiocodes Stream**, **Jambonz Stream**, **Genesys Cloud**.
+  </Card>
+</CardGroup>
+
+## Supported platforms
+
+| Platform | Type | Best for |
+|---|---|---|
+| Audiocodes VoiceAI Connect | Voice Ready | Enterprise contact centers using Audiocodes infrastructure |
+| Audiocodes Stream | Voice Stream | Real-time streaming with Audiocodes |
+| Jambonz | Voice Ready | Open-source telephony deployments |
+| Jambonz Stream | Voice Stream | Real-time streaming with Jambonz |
+| Twilio Voice | Voice Ready | Cloud telephony with Twilio's simple API |
+| Twilio Media Streams | Voice Stream | Low-latency audio streaming via Twilio |
+| Genesys Cloud | Voice Stream | Enterprise contact center on Genesys |
+
+## Getting started
+
+Rasa recommends building your voice assistant as a separate project from your text assistant. While you can reuse the underlying flows, voice and text assistants evolve differently and are easier to maintain when kept apart.
+
+<Steps>
+  <Step title="Choose a voice platform">
+    Select the channel connector that matches your telephony infrastructure. Add the channel to `credentials.yml` with the required API credentials.
+  </Step>
+  <Step title="Configure speech services">
+    Voice-ready channels rely on an external ASR (Automatic Speech Recognition) and TTS (Text-to-Speech) service. Connect your preferred speech provider via the speech integrations configuration. All integrations support a `language_map` for multilingual setups.
+  </Step>
+  <Step title="Design voice-specific flows">
+    Voice conversations have different timing and phrasing requirements than text. Keep responses short, avoid markdown formatting, and account for cases where the user doesn't respond or speaks while the assistant is talking.
+  </Step>
+  <Step title="Test in your browser">
+    Use `rasa inspect` with a Deepgram API key to test your voice assistant directly in the browser before connecting to a telephony platform.
+  </Step>
+</Steps>
+
+## Voice-specific features
+
+### Handling user silence
+
+In a voice call, silence can mean the user is confused, thinking, or simply distracted. Configure how long the assistant waits before treating a non-response as silence:
+
+```yaml
+# endpoints.yml (config.yml in older versions)
+interaction_handling:
+  global_silence_timeout: 7   # seconds before treating non-response as silence
+```
+
+When the timeout fires, the assistant can repeat the last prompt, offer simpler options, or route to a human agent.
+
+### DTMF (keypad) input
+
+For high-accuracy input — account numbers, PINs, credit card numbers — you can collect digits via DTMF tones instead of speech. Configure this on individual `collect` steps in your flows:
+
+```yaml
+# flows.yml
+flows:
+  verify_account:
+    description: verify the user's account with their PIN
+    steps:
+      - collect: account_pin
+        description: "The user's 4-digit PIN"
+        dtmf:
+          length: 4          # auto-submit after 4 digits
+          termination_key: "#"
+```
+
+<Note>
+  DTMF input is particularly valuable for PCI DSS compliance scenarios where
+  collecting sensitive data (like credit card numbers) over voice is required.
+  Speech recognition transcripts are not stored in this mode.
+</Note>
+
+### Filler responses for slow operations
+
+When a custom action or external API call takes several seconds, users on a voice call have no visual indicator that anything is happening. Add a filler response before slow steps to reduce hang-up rates:
+
+```yaml
+# flows.yml
+flows:
+  check_balance:
+    name: check your balance
+    description: check the user's account balance
+    steps:
+      - action: utter_please_wait       # "Just a moment while I look that up..."
+      - action: check_balance           # slow custom action
+      - action: utter_current_balance
+```
+
+### Managing barge-ins (interruptions)
+
+Voice stream channels support barge-in detection: when a user starts speaking while the assistant is talking, the assistant stops and processes the interruption. This behavior is available for Browser Audio, Twilio Media Streams, and Jambonz Stream channels, and uses partial transcripts from the ASR engine to detect speech onset.
+
+### Channel-specific responses
+
+You can define separate response text for voice channels to avoid sending markdown, links, or visual formatting that does not translate to audio:
+
+```yaml
+# domain.yml
+responses:
+  utter_help_options:
+    - text: "Here's what I can help with:\n- Check your balance\n- Transfer money\n- Report a lost card"
+    - text: "I can help you check your balance, transfer money, or report a lost card."
+      channel: "twilio_voice"
+```
+
+## Multilingual voice assistants
+
+If your assistant supports multiple languages, configure a `language_map` in your speech integration so the correct ASR model and TTS voice are used for each language. All Rasa speech integrations support this mapping:
+
+```yaml
+# endpoints.yml (example structure)
+speech:
+  asr:
+    provider: deepgram
+    language_map:
+      en: en-US
+      de: de-DE
+      es: es-ES
+  tts:
+    provider: deepgram
+    language_map:
+      en: en-US
+      de: de-DE
+      es: es-ES
+```
+
+The assistant's built-in `language` slot controls which entry in the `language_map` is active for the current conversation.
+
+<Tip>
+  Fine-tuned smaller models like Llama 8B can be fast enough for real-time voice
+  interactions where latency is critical. If you are self-hosting your LLM,
+  benchmark end-to-end response latency before going live — the goal is to keep
+  the pause between user speech and assistant response under two seconds.
+</Tip>

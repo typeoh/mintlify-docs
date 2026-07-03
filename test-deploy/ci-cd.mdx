@@ -1,0 +1,212 @@
+---
+title: "Automating Rasa Deployments with CI/CD Pipelines"
+sidebarTitle: "CI/CD"
+description: "Build a CI/CD pipeline that validates, trains, tests, and deploys your Rasa assistant automatically on every commit, preventing regressions in production."
+---
+
+A well-configured CI/CD pipeline is one of the most valuable investments you can make for a Rasa assistant. Every time you push a change to your flows, domain, or custom actions, the pipeline automatically validates the data, trains the model, runs end-to-end tests, and deploys the new version—only if all checks pass. This means you catch regressions before users see them, maintain a consistent quality bar, and ship improvements faster because you're not waiting on manual release cycles.
+
+## The CI/CD workflow
+
+The core workflow for a Rasa assistant follows four stages:
+
+<Steps>
+  <Step title="Validate">
+    Check that your data, flows, and domain are structurally sound before spending time on training.
+
+    ```bash
+    rasa data validate
+    ```
+
+    If validation finds errors—missing actions, undefined slots, unreachable flow steps—the pipeline stops immediately and reports the issue.
+  </Step>
+
+  <Step title="Train">
+    Compile your flows, patterns, and configuration into a deployable model. Make sure the CI environment uses the same Rasa Pro version, Python version, and Docker image as production.
+
+    ```bash
+    rasa train --domain /app/domain --data /app/data --out /app/models
+    ```
+  </Step>
+
+  <Step title="Test">
+    Start the action server (if needed) and run your E2E test suite against the newly trained model. If any test fails, the pipeline stops—no broken model reaches production.
+
+    ```bash
+    rasa test e2e tests/e2e_test_cases.yml \
+      --model /app/models \
+      --endpoints /app/endpoints.yml
+    ```
+  </Step>
+
+  <Step title="Deploy">
+    Upload the model to cloud storage and notify your orchestrator (Kubernetes or Docker Compose) to load the new model. This step only runs if the test stage passes.
+  </Step>
+</Steps>
+
+## Key CI/CD commands
+
+These are the commands you'll use most often in your pipeline configuration:
+
+| Command | Purpose |
+|---|---|
+| `rasa data validate` | Structural checks on flows, domain, and training data |
+| `rasa train` | Compile model from flows, domain, and config |
+| `rasa test e2e` | Run automated E2E conversation tests |
+| `rasa studio push` | Push changes to Rasa Studio |
+| `rasa studio upload --dangerously-delete-existing` | Upload and replace all Studio content |
+
+## CI/CD best practices
+
+<Accordion title="Use version control for everything">
+  Keep all conversation flows, prompt configurations, custom action code, and domain files in Git. Every change to your assistant's behavior should be tracked, reviewable, and reversible. This includes changes to flow YAML, `config.yml`, and `endpoints.yml`.
+</Accordion>
+
+<Accordion title="Mirror environments">
+  Your CI environment should use the same Docker image, Python version, and Rasa Pro version as your production environment. Differences in environments are a common source of "works in CI, breaks in prod" failures.
+</Accordion>
+
+<Accordion title="Store artifacts in versioned storage">
+  After a successful build, upload the trained model to a cloud bucket (S3, GCS, or Azure Blob) with a version-stamped path. This lets you roll back to a previous model immediately if a regression escapes testing.
+</Accordion>
+
+<Accordion title="Use canary or blue-green deployments">
+  For high-traffic assistants, route a small percentage of traffic to the new model first before full rollout. Kubernetes makes this straightforward with pod replicas and traffic splitting.
+</Accordion>
+
+<Accordion title="Run E2E tests on pull requests, not just main">
+  Catch regressions before code merges, not after. Configure your pipeline to run `rasa test e2e` on every pull request that changes flows, domain, data, or custom actions.
+</Accordion>
+
+## Environment variable management
+
+Store all secrets in your CI/CD provider's secret store—never in code or CI configuration files. Reference them as environment variables in your pipeline:
+
+<Tabs>
+  <Tab title="GitHub Actions">
+    Store secrets in **Settings > Secrets and variables > Actions**, then reference them:
+
+    ```yaml
+    env:
+      RASA_LICENSE: ${{ secrets.RASA_LICENSE }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    ```
+  </Tab>
+  <Tab title="GitLab CI">
+    Store secrets in **Settings > CI/CD > Variables**, then reference them:
+
+    ```yaml
+    variables:
+      RASA_LICENSE: $RASA_LICENSE
+      OPENAI_API_KEY: $OPENAI_API_KEY
+    ```
+  </Tab>
+</Tabs>
+
+## GitHub Actions example
+
+The following workflow runs on every push to `main` that changes flows or domain files:
+
+```yaml
+name: Rasa Pro CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'data/**'
+      - 'domain/**'
+      - 'flows/**'
+      - 'tests/**'
+
+jobs:
+  train_test_deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Pull Rasa Pro image
+        run: |
+          docker pull europe-west3-docker.pkg.dev/rasa-releases/rasa-pro/rasa-pro:3.8.0-latest
+
+      - name: Validate data
+        run: |
+          docker run -v ${GITHUB_WORKSPACE}:/app \
+            -e RASA_LICENSE=${RASA_LICENSE} \
+            europe-west3-docker.pkg.dev/rasa-releases/rasa-pro/rasa-pro:3.8.0-latest \
+            data validate
+        env:
+          RASA_LICENSE: ${{ secrets.RASA_LICENSE }}
+
+      - name: Train Rasa model
+        run: |
+          docker run -v ${GITHUB_WORKSPACE}:/app \
+            -e OPENAI_API_KEY=${OPENAI_API_KEY} \
+            -e RASA_LICENSE=${RASA_LICENSE} \
+            -e RASA_TELEMETRY_ENABLED=false \
+            europe-west3-docker.pkg.dev/rasa-releases/rasa-pro/rasa-pro:3.8.0-latest \
+            train --domain /app/domain --data /app/data --out /app/models
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          RASA_LICENSE: ${{ secrets.RASA_LICENSE }}
+
+      - name: Start action server
+        run: |
+          docker run -d -p 5055:5055 --name action_server \
+            my-docker-username/my-action-server:latest
+          echo "Waiting for action server..."
+          timeout=60
+          while ! curl --output /dev/null --silent --fail http://localhost:5055/health; do
+            printf '.'
+            sleep 5
+            timeout=$((timeout-5))
+            if [ "$timeout" -le 0 ]; then
+              echo "Action server did not start in time."
+              docker logs action_server
+              exit 1
+            fi
+          done
+
+      - name: Run E2E tests
+        run: |
+          docker run -v ${GITHUB_WORKSPACE}:/app \
+            --link action_server:action_server \
+            -e OPENAI_API_KEY=${OPENAI_API_KEY} \
+            -e RASA_LICENSE=${RASA_LICENSE} \
+            -e RASA_TELEMETRY_ENABLED=false \
+            europe-west3-docker.pkg.dev/rasa-releases/rasa-pro/rasa-pro:3.8.0-latest \
+            test e2e /app/tests/e2e_test_cases.yml \
+              --model /app/models \
+              --endpoints /app/endpoints.yml
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          RASA_LICENSE: ${{ secrets.RASA_LICENSE }}
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v0.4.0
+        with:
+          credentials_json: '${{ secrets.GCP_SA_KEY }}'
+
+      - name: Upload model to Google Cloud Storage
+        run: |
+          gsutil cp -r models/* gs://my-model-storage/
+```
+
+## Preventing regressions
+
+The E2E test suite is your regression safety net. Every time you make a change, the pipeline verifies that all existing test cases still pass. To keep this effective:
+
+- **Add tests before you merge.** When you add a new flow or modify an existing one, include at least one E2E test case that covers the primary happy path.
+- **Cover edge cases.** Add tests for known failure modes—interrupted flows, out-of-scope messages, ambiguous user input.
+- **Run coverage reports.** Periodically run `rasa test e2e --coverage-report` to identify flows that aren't covered by any test case.
+
+```bash
+rasa test e2e --coverage-report --coverage-output-path coverage/
+```
+
+<Tip>
+  If the pipeline takes too long because of LLM API call latency during tests, consider splitting your test suite into a fast smoke test suite (no generative assertions) and a slower full suite. Run the smoke tests on every pull request and the full suite on merges to main.
+</Tip>

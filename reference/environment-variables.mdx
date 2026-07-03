@@ -1,0 +1,244 @@
+---
+title: "Environment Variables Reference for Rasa Pro"
+sidebarTitle: "Environment Variables"
+description: "Every environment variable supported by Rasa Pro — license keys, LLM API keys, logging controls, beta flags, and backing-service configuration."
+---
+
+Rasa Pro reads configuration from environment variables for sensitive values (API keys, passwords), runtime tuning (log levels, pool sizes), and feature flags (beta capabilities). This page lists every supported variable organized by category, with its description, default value, and whether it is required.
+
+## How to Set Environment Variables
+
+<Tabs>
+  <Tab title="Shell export">
+    ```bash
+    export RASA_LICENSE=<your-license-key>
+    export OPENAI_API_KEY=<your-openai-key>
+    ```
+  </Tab>
+  <Tab title=".env file">
+    Create a `.env` file in your project root (add it to `.gitignore`):
+
+    ```bash
+    RASA_LICENSE=<your-license-key>
+    OPENAI_API_KEY=<your-openai-key>
+    LOG_LEVEL=INFO
+    ```
+
+    Then load it before running Rasa:
+
+    ```bash
+    set -a && source .env && set +a
+    rasa run
+    ```
+  </Tab>
+  <Tab title="Docker">
+    ```bash
+    docker run \
+      -e RASA_LICENSE=<key> \
+      -e OPENAI_API_KEY=<key> \
+      rasa/rasa:latest run
+    ```
+  </Tab>
+  <Tab title="Kubernetes">
+    Store secrets in a Kubernetes `Secret` object and mount them as environment variables in your pod spec:
+
+    ```yaml
+    env:
+      - name: RASA_LICENSE
+        valueFrom:
+          secretKeyRef:
+            name: rasa-secrets
+            key: license
+      - name: OPENAI_API_KEY
+        valueFrom:
+          secretKeyRef:
+            name: rasa-secrets
+            key: openai-api-key
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+## License
+
+| Variable | Description | Default | Required |
+|---|---|---|---|
+| `RASA_LICENSE` | Your Rasa Pro license key. Must be set for Rasa Pro to start. | — | ✅ Required |
+
+---
+
+## LLM API Keys
+
+These are the standard environment variables each LLM provider reads when no explicit `api_key` is set in `endpoints.yml`. You can also pass them directly in your model group config using `${VAR_NAME}` syntax.
+
+| Variable | Provider | Required |
+|---|---|---|
+| `OPENAI_API_KEY` | OpenAI | Required for OpenAI |
+| `AZURE_API_KEY` | Azure OpenAI | Required for Azure |
+| `MISTRAL_API_KEY` | Mistral | Required for Mistral |
+| `GEMINI_API_KEY` | Google Gemini (AI Studio) | Required for Gemini |
+| `ANTHROPIC_API_KEY` | Anthropic (Claude) | Required for Anthropic |
+| `HUGGINGFACE_API_KEY` | HuggingFace Inference Endpoints | Required for HuggingFace |
+| `GROQ_API_KEY` | Groq | Required for Groq |
+| `COHERE_API_KEY` | Cohere | Required for Cohere |
+| `TOGETHERAI_API_KEY` | Together AI | Required for Together AI |
+| `VOYAGE_API_KEY` | Voyage AI (embeddings) | Required for Voyage AI |
+| `AWS_ACCESS_KEY_ID` | Amazon Bedrock | Required for Bedrock (if not using IAM role) |
+| `AWS_SECRET_ACCESS_KEY` | Amazon Bedrock | Required for Bedrock (if not using IAM role) |
+| `AWS_REGION` | Amazon Bedrock | Required for Bedrock |
+| `AWS_SESSION_TOKEN` | Amazon Bedrock (temporary credentials) | Optional |
+
+---
+
+## SSL and Proxy
+
+| Variable | Description | Default | Required |
+|---|---|---|---|
+| `RASA_CA_BUNDLE` | Path to a custom CA certificate bundle (PEM format) for TLS-intercepting proxies. Replaces the deprecated `REQUESTS_CA_BUNDLE`. | OS certificate store | Optional |
+| `HTTP_PROXY` | HTTP proxy URL for routing LLM API calls. Format: `http://host:port` | — | Optional |
+| `HTTPS_PROXY` | HTTPS proxy URL for routing LLM API calls. Format: `https://host:port` | — | Optional |
+| `LLM_API_HEALTH_CHECK` | When `true`, validates all declared LLM deployments are reachable on startup. | `false` | Optional |
+
+---
+
+## Observability and Logging
+
+| Variable | Description | Default |
+|---|---|---|
+| `LOG_LEVEL` | Global log level for Rasa and Rasa Pro. | `INFO` |
+| `LOG_LEVEL_LIBRARIES` | Log level for all third-party libraries (TensorFlow, asyncio, SocketIO, etc.). | `ERROR` |
+| `LOG_LEVEL_KAFKA` | Log level for the Kafka library. | `ERROR` |
+| `LOG_LEVEL_RABBITMQ` | Log level for AMQP / RabbitMQ libraries. | `ERROR` |
+| `LOG_LEVEL_PYMONGO` | Log level for PyMongo. | `ERROR` |
+| `LOG_LEVEL_MATPLOTLIB` | Log level for Matplotlib. | `ERROR` |
+| `LOG_LEVEL_PRESIDIO` | Log level for Presidio PII libraries. | `ERROR` |
+| `LOG_LEVEL_MLFLOW` | Log level for MLFlow. | `ERROR` |
+| `LOG_LEVEL_FAKER` | Log level for the Faker library. | `ERROR` |
+
+### LLM Component Log Levels
+
+These variables control verbose prompt/response logging for specific CALM components:
+
+| Variable | Scope | Default |
+|---|---|---|
+| `LOG_LEVEL_LLM` | All LLM-based components | `DEBUG` |
+| `LOG_LEVEL_LLM_COMMAND_GENERATOR` | All `LLMCommandGenerator` variants | `DEBUG` |
+| `LOG_LEVEL_LLM_ENTERPRISE_SEARCH` | `EnterpriseSearchPolicy` prompts | `DEBUG` |
+| `LOG_LEVEL_LLM_INTENTLESS_POLICY` | `IntentlessPolicy` prompts | `DEBUG` |
+| `LOG_LEVEL_LLM_REPHRASER` | `ContextualResponseRephraser` prompts | `DEBUG` |
+| `LOG_LEVEL_NLU_COMMAND_ADAPTER` | NLU command adapter | `INFO` |
+| `LOG_LEVEL_LLM_BASED_ROUTER` | `LLMBasedRouter` component | `INFO` |
+
+### Telemetry
+
+| Variable | Description | Default |
+|---|---|---|
+| `RASA_TELEMETRY_ENABLED` | Enable or disable telemetry reporting to Rasa. | `true` |
+| `RASA_TELEMETRY_DEBUG` | Enable debug output for telemetry reporting. | `false` |
+| `TRACING_SERVICE_NAME` | Top-level service name for OpenTelemetry traces. | `rasa` |
+| `RASA_TRACING_DEBUGGING_ENABLED` | Include `action_metadata` in traces from `EnterpriseSearchPolicy`. | `false` |
+
+---
+
+## Beta Feature Flags
+
+These variables enable features that are not yet generally available. Always check the documentation for any stability caveats before enabling them in production.
+
+| Variable | Feature | Default |
+|---|---|---|
+| `RASA_PRO_BETA_FINE_TUNING_RECIPE` | Enable the LLM fine-tuning recipe (`rasa llm finetune prepare-data`). | `false` |
+| `RASA_PRO_BETA_STUB_CUSTOM_ACTION` | Stub custom actions in E2E tests without running the action server. | `false` |
+| `RASA_PRO_BETA_E2E_CONVERSION` | Convert sample conversations into E2E test cases automatically. | `false` |
+| `RASA_PRO_BETA_REPEAT_COMMAND` | Enable the voice repair pattern that repeats the last bot message when asked. | `false` |
+| `RASA_PRO_BETA_VIER` | Enable the `vier_cvg` voice connector. | `false` |
+| `CLARIFY_ON_MULTIPLE_START_FLOWS` | Trigger clarification when multiple `StartFlow` commands are generated simultaneously. | `false` |
+
+---
+
+## Dialogue Management
+
+| Variable | Description | Default |
+|---|---|---|
+| `RASA_DUCKLING_HTTP_URL` | URL of the Duckling HTTP service for `DucklingEntityExtractor`. | — |
+| `MAX_NUMBER_OF_PREDICTIONS` | Maximum actions predicted per turn for NLU-based assistants. | `10` |
+| `MAX_NUMBER_OF_PREDICTIONS_CALM` | Maximum actions predicted per turn for CALM assistants. | `1000` |
+
+---
+
+## Backing Services
+
+| Variable | Description | Default |
+|---|---|---|
+| `POSTGRESQL_SCHEMA` | PostgreSQL schema for `SQLTrackerStore`. | `public` |
+| `POSTGRESQL_POOL_SIZE` | Connection pool size for `SQLTrackerStore`. | `50` |
+| `POSTGRESQL_MAX_OVERFLOW` | Max pool overflow for `SQLTrackerStore`. | `100` |
+| `SQL_TRACKER_STORE_SSL_MODE` | SSL mode for `SQLTrackerStore` (e.g., `require`, `verify-full`). | — |
+| `SQL_TRACKER_STORE_SSL_ROOT_CERTIFICATE` | Path to the root certificate for `SQLTrackerStore` SSL. | — |
+| `RASA_ENVIRONMENT` | Rasa environment label attached to events in `PikaEventBroker` and `KafkaEventBroker`. | — |
+| `TICKET_LOCK_LIFETIME` | Lifetime of ticket locks in seconds (lock store). | `60` |
+| `SECRET_MANAGER` | Type of secrets manager to use (e.g., `vault`). | `vault` |
+| `VAULT_URL` | URL of the HashiCorp Vault instance. | — |
+| `VAULT_TOKEN` | Authentication token for HashiCorp Vault. | — |
+| `VAULT_NAMESPACE` | Namespace within HashiCorp Vault. | — |
+| `VAULT_RASA_SECRETS_PATH` | Path to Rasa secrets in Vault. | `rasa-secrets` |
+| `IAM_CLOUD_PROVIDER` | Cloud provider for IAM authentication. Supported value: `aws`. | — |
+| `AWS_DEFAULT_REGION` | AWS region for IAM authentication (required when `IAM_CLOUD_PROVIDER=aws`). | — |
+| `ELASTICACHE_REDIS_AWS_IAM_ENABLED` | Enable IAM authentication for ElastiCache Redis. | — |
+| `RDS_SQL_DB_AWS_IAM_ENABLED` | Enable IAM authentication for Amazon RDS connections. | — |
+| `KAFKA_MSK_AWS_IAM_ENABLED` | Enable IAM authentication for Amazon MSK Kafka. | — |
+
+---
+
+## Advanced Configuration
+
+| Variable | Description | Default |
+|---|---|---|
+| `COMPRESS_ACTION_SERVER_REQUEST` | Enable HTTP compression for requests to the action server. | `false` |
+| `RASA_MAX_CACHE_SIZE` | Maximum training cache size in MB. | `1000` |
+| `RASA_CACHE_NAME` | Filename of the training cache database. | `cache.db` |
+| `RASA_CACHE_DIRECTORY` | Directory for the training cache. | `.rasa/cache/` |
+| `RASA_SHELL_STREAM_READING_TIMEOUT_IN_SECONDS` | Stream reading timeout for `rasa shell`. | `10` |
+| `SANIC_WORKERS` | Number of HTTP workers for the REST API server. | `1` |
+| `SANIC_BACKLOG` | Max unaccepted connections before the HTTP server refuses new ones. | `100` |
+| `READ_YAML_FILE_CACHE_MAXSIZE` | Max size of the LRU cache for YAML file parsing. | `256` |
+
+---
+
+## Rasa Studio
+
+These variables override values in `$HOME/.config/rasa/global.yml` (created by `rasa studio config`):
+
+| Variable | Description |
+|---|---|
+| `RASA_STUDIO_AUTH_SERVER_URL` | URL of the authentication server (Keycloak). |
+| `RASA_STUDIO_CLI_STUDIO_URL` | URL of the Studio data endpoint. |
+| `RASA_STUDIO_CLI_REALM_NAME_KEY` | Keycloak realm name containing client ID and secret. |
+| `RASA_STUDIO_CLI_CLIENT_ID_KEY` | Client ID for `rasa studio` CLI authentication. |
+
+---
+
+## Rasa Pro Services
+
+Rasa Pro Services is a separate container. It reads its own environment variables:
+
+| Variable | Description | Default | Required |
+|---|---|---|---|
+| `RASA_LICENSE` | License key for Rasa Pro Services. | — | ✅ |
+| `KAFKA_BROKER_ADDRESS` | Address of the Kafka broker. | — | ✅ |
+| `KAFKA_TOPIC` | Topic Rasa publishes events to. | `rasa_core_events` | ✅ |
+| `RASA_ANALYTICS_DB_URL` | URL of the analytics data store. | — | Optional |
+| `LOGGING_LEVEL` | Log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`). | `INFO` | Optional |
+| `FORCE_JSON_LOGGING` | Use structured JSON logging. | — | Optional |
+| `RASA_ANALYTICS_CONSUMER_ID` | Kafka consumer group name. | `rasa-analytics-group` | Optional |
+| `RASA_ANALYTICS_CONSUMER_COUNT` | Number of Kafka consumers. | `1` | Optional |
+| `RUN_ANALYTICS_DB_MIGRATIONS` | Run analytics DB migrations on startup. | `true` | Optional |
+
+---
+
+## Rasa SDK
+
+| Variable | Description | Default |
+|---|---|---|
+| `ACTION_SERVER_SANIC_WORKERS` | Number of Sanic HTTP workers in the action server. | `1` |
+| `LOG_LEVEL_LIBRARIES` | Log level of third-party libraries in the action server. | `ERROR` |

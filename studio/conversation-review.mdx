@@ -1,0 +1,146 @@
+---
+title: "Reviewing Conversations in Rasa Studio"
+sidebarTitle: "Conversation Review"
+description: "Browse and analyze production chat logs in Rasa Studio—filter by flow, slot, intent, or tag to find issues and improve your assistant's performance."
+---
+
+Conversation Review lets you browse and analyze the real conversations your users have had with your assistant. It helps you detect patterns that explain why certain skills aren't working—whether the issue is a design problem, a limited scope, incorrect flow routing, or a bug in an action. Instead of relying solely on aggregate metrics, you can read the actual turn-by-turn conversation and understand exactly what happened.
+
+## Prerequisites
+
+To see conversation data in Studio, your deployed Rasa assistant must be configured to send events to Studio via a Kafka broker.
+
+- Connect both your Rasa assistant and Studio to the **same Kafka instance** and configure them to use the **same topic**.
+- In your assistant's `config.yml`, set the `assistant_id` field to the **same value** as the assistant name in Studio.
+
+Refer to the [Kafka Event Broker reference](https://rasa.com/docs/reference/integrations/event-brokers/#kafka-event-broker) for detailed Kafka configuration instructions.
+
+## Getting Started
+
+1. Open Studio and select your assistant from the dropdown in the left navigation bar.
+2. Click **Conversation Review** in the left navigation.
+
+The main view shows the **Conversations Table**, which lists the 100 most recent conversations from the last seven days, sorted by descending start time.
+
+## Conversations Table
+
+The Conversations Table gives you a quick scan of recent activity before you dive into individual sessions.
+
+| Column | Description |
+|---|---|
+| **Conversation ID** | The unique ID for the conversation session (also called a Session or User ID) |
+| **Session Start** | Timestamp of the first event in the session, adjusted to your local timezone |
+| **Tags** | Labels you or your teammates have added to the conversation |
+| **Messages** | Number of messages the user sent during the session |
+| **Reviewed** | Green checkbox appears when a team member has viewed and marked the conversation as reviewed |
+
+### Filtering Conversations
+
+Click the **Filters** icon in the top-left corner of the table to narrow down the conversations you're looking at. Filters are especially useful when you want to investigate a specific flow, find conversations where a particular slot was set, or look at a specific channel.
+
+Available filters:
+
+| Filter | Description |
+|---|---|
+| **Timeframe** | Limit results to a specific date range |
+| **Conversation ID** | Look up a specific conversation by its ID |
+| **Predicted Intent** | Find conversations where a specific intent was predicted |
+| **Flow** | Find conversations that triggered a specific flow (CALM assistants only) |
+| **Tags** | Filter by tags your team has applied |
+| **Response** | Find conversations where a specific response was sent |
+| **Channel** | Filter by the channel where conversations occurred |
+| **Language** | Filter by the conversation language |
+| **Slot** | Filter by a specific slot value that was set during the conversation |
+| **UserID** | Filter by the user's unique identifier if present |
+
+## Conversation Details Panel
+
+Click any conversation in the table to open the **Conversation Stream** alongside a **Details** panel on the right.
+
+The Details panel shows session-level metadata for the conversation:
+
+| Field | Description |
+|---|---|
+| **Conversation ID** | Unique identifier for the session |
+| **Session Start** | Timestamp of the first event |
+| **Model ID** | Which trained model version handled the conversation |
+| **Channel** | Where the conversation took place |
+| **User Messages** | Total number of user messages in the session |
+| **Flows** | Flows started during the conversation (CALM assistants) |
+| **Predicted intents** | Intents predicted during the conversation (NLU assistants) |
+| **Tags** | Tags associated with the conversation |
+
+## Conversation Stream
+
+The Conversation Stream shows you the full turn-by-turn exchange. User messages appear on the right side. Assistant messages and events appear on the left.
+
+### Clicking on Messages
+
+Click any user or assistant message to see more details in the right-hand Details panel:
+
+- **Message timestamp**
+- **Message ID**
+- **Sequential position** in the conversation
+- For NLU assistants: predicted intents with confidence scores
+
+### Slot Events (Yellow Banners)
+
+When a slot is set during a conversation, a yellow banner appears in the stream. Click the banner to see:
+
+- The timestamp of the slot event
+- The slot name
+- The value that was stored
+
+Slot events help you verify that your assistant is correctly extracting and storing the information users provide.
+
+### Flow Events (Blue Banners)
+
+For CALM assistants, flow transitions appear as blue banners. Click a banner to see which flow event occurred:
+
+| Event | Meaning |
+|---|---|
+| **Flow started** | The assistant began executing this flow |
+| **Flow interrupted** | The flow paused; it will resume when the interrupting flow completes |
+| **Flow resumed** | The flow restarted from where it paused |
+| **Flow completed** | The flow finished successfully |
+| **Flow cancelled** | The user cancelled the flow mid-conversation |
+
+## Conversation Tags
+
+Tags help your team organize and batch conversations for review workflows. You add them in the Details panel while reviewing a conversation.
+
+Common tagging patterns:
+
+- `out-of-scope` — the user asked about something the assistant wasn't designed to handle
+- `flow-failed` — the assistant didn't complete the expected flow
+- `topic-<subject>` — group conversations by the topic the user brought up
+- `needs-analysis` — flag conversations for follow-up by a teammate
+- A teammate's name — assign specific conversations for someone to review
+
+After tagging, you can filter the Conversations Table by tag to surface all conversations in a batch for review or action.
+
+## Use Cases for Conversation Review
+
+<Accordion title="Finding out-of-scope questions">
+  Filter by flows that triggered the fallback or clarification pattern. Read the conversations to understand what topics users are asking about that your assistant can't handle. Use this to inform new flow development.
+</Accordion>
+
+<Accordion title="Debugging flow failures">
+  Filter by a specific flow and look for conversations where it was started but not completed. Read the stream to find the step where things went wrong—a misunderstood user message, an unexpected slot value, or an action error.
+</Accordion>
+
+<Accordion title="Validating a new assistant version">
+  After training a new version, filter by the Model ID for that version and review a sample of recent conversations to confirm the new flows work as intended before promoting to production.
+</Accordion>
+
+<Accordion title="Improving response quality">
+  Filter by a specific response to find every conversation where that message was sent. Review whether the response was appropriate in context and whether users reacted positively. Edit the response in the CMS if needed.
+</Accordion>
+
+## Automatic Conversation Deletion
+
+To manage data retention and maintain compliance with data protection regulations, Studio can automatically delete conversations after a defined retention period. See the [Automatic Conversation Deletion reference](https://rasa.com/docs/reference/deployment/automatic-conversation-deletion/) for configuration details.
+
+## Conversations API
+
+For teams that need to tag or delete conversations programmatically—for example, as part of a data compliance workflow—Studio exposes a [Conversations API](https://rasa.com/docs/reference/api/studio/conversation-api/).

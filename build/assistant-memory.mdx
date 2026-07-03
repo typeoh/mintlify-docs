@@ -1,0 +1,179 @@
+---
+title: "Assistant Memory: Persistent Context Across Conversations"
+sidebarTitle: "Memory"
+description: "Use slots, tracker stores, and session configuration to give your Rasa assistant memory. Store user data, persist values across flows, and configure session expiry."
+---
+
+Context is what separates a great conversational experience from a frustrating one. If a user tells your assistant their email address once, they should not have to repeat it in the next turn, the next flow, or the next session. Rasa gives you several layers of memory to choose from, each suited to different persistence requirements.
+
+## Slots — the basic unit of memory
+
+Slots are key-value pairs stored in the conversation tracker. They represent information your assistant has collected or inferred — things like a user's name, a selected product, or the outcome of an API call. Every slot has a **name**, a **type** (`text`, `bool`, `float`, `categorical`, `any`, etc.), and an optional initial value.
+
+### Defining slots
+
+Slots are declared in `domain.yml` under the `slots` key. The most common setup for a CALM assistant uses LLM-based filling:
+
+```yaml
+# domain.yml
+slots:
+  user_name:
+    type: text
+    mappings:
+      - type: from_llm
+
+  phone_number:
+    type: text
+    mappings:
+      - type: from_llm
+    validation:
+      rejections:
+        - if: not (slots.phone_number matches "^\([0-9]{3}\) [0-9]{3}-[0-9]{4}$")
+          utter: utter_invalid_phone_number
+      refill_utter: "utter_refill_phone_number"
+```
+
+With `from_llm`, the command generator sets the slot whenever it extracts the relevant information from conversation context. You can combine this with NLU-based mappings if you also run an NLU pipeline.
+
+### Collecting slots in flows
+
+Within a flow, use a `collect` step to explicitly request a slot value from the user:
+
+```yaml
+# flows.yml
+flows:
+  book_appointment:
+    description: book an appointment for the user
+    steps:
+      - collect: user_name
+        description: "The user's full name"
+      - collect: phone_number
+        description: "User's phone number in (xxx) xxx-xxxx format"
+        rejections:
+          - if: not (slots.phone_number matches "^\([0-9]{3}\) [0-9]{3}-[0-9]{4}$")
+            utter: utter_invalid_phone_number
+      - action: utter_appointment_confirmed
+```
+
+The `description` field gives the LLM context about what the slot represents and what constitutes a valid value.
+
+## Slot validation
+
+Rasa provides three tiers of validation, from lightweight to fully custom:
+
+<AccordionGroup>
+  <Accordion title="Domain-level validation (universal constraints)">
+    Defined in `domain.yml` on the slot itself. These run every time the slot is set, regardless of which flow triggers the update. Use them for format and type constraints that apply universally — regex patterns, numeric ranges, or allowed enum values.
+
+    ```yaml
+    # domain.yml
+    slots:
+      phone_number:
+        type: text
+        mappings:
+          - type: from_llm
+        validation:
+          rejections:
+            - if: not (slots.phone_number matches "^\([0-9]{3}\) [0-9]{3}-[0-9]{4}$")
+              utter: utter_invalid_phone_number
+          refill_utter: "utter_refill_phone_number"
+    ```
+  </Accordion>
+
+  <Accordion title="Flow-level rejections (contextual checks)">
+    Defined in the `collect` step of a flow. Use these for context-sensitive validation — for example, checking that a date is in the future, or that a number falls within a business-defined range.
+
+    ```yaml
+    - collect: phone_number
+      description: "User's phone number in (xxx) xxx-xxxx format"
+      rejections:
+        - if: not (slots.phone_number matches "^\([0-9]{3}\) [0-9]{3}-[0-9]{4}$")
+          utter: utter_invalid_phone_number
+    ```
+  </Accordion>
+
+  <Accordion title="Custom action validation (external checks)">
+    When validation requires an API call or database lookup, move the logic to a custom action. The action can reset the slot and redirect the user if validation fails:
+
+    ```yaml
+    - action: action_check_phone_number_has_account
+      next:
+        - if: slots.phone_number_has_account
+          then:
+            - action: utter_inform_phone_number_has_account
+            - set_slots:
+                - phone_number: null
+          next: "collect_phone_number"
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Session configuration
+
+The session configuration in `domain.yml` controls how long a conversation session lasts and whether slot values carry over when a new session starts.
+
+```yaml
+# domain.yml
+session_config:
+  session_expiration_time: 60   # minutes; 0 = no timeout
+  carry_over_slots_to_new_session: true
+```
+
+- **`session_expiration_time`** — After this many minutes of inactivity, the next message from the user starts a fresh session.
+- **`carry_over_slots_to_new_session`** — When `true`, slot values filled in the previous session are available at the start of the next one. Set to `false` if you want a clean slate each session.
+
+## Tracker stores — persisting memory across restarts
+
+By default, Rasa stores conversation trackers in memory, which means they are lost when the server restarts. For production deployments, configure a persistent tracker store in `endpoints.yml`:
+
+<Tabs>
+  <Tab title="PostgreSQL / SQL">
+    ```yaml
+    # endpoints.yml
+    tracker_store:
+      type: sql
+      dialect: postgresql
+      url: ${POSTGRES_HOST}
+      db: rasa_tracker
+      username: ${POSTGRES_USER}
+      password: ${POSTGRES_PASSWORD}
+    ```
+  </Tab>
+  <Tab title="Redis">
+    ```yaml
+    # endpoints.yml
+    tracker_store:
+      type: redis
+      url: ${REDIS_HOST}
+      port: 6379
+      password: ${REDIS_PASSWORD}
+      db: 0
+      key_prefix: "rasa_tracker_"
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  When running multiple Rasa processes (for example, multiple Sanic workers or
+  pods), use a Redis lock store alongside the tracker store to prevent race
+  conditions when two processes handle messages from the same user
+  simultaneously.
+</Note>
+
+## When to use persistent memory vs. ephemeral slots
+
+<CardGroup cols={2}>
+  <Card title="Use ephemeral slots when..." icon="clock">
+    The data is only relevant within a single conversation — a temporary order reference, a selection made during a flow, or intermediate calculation results. Letting these reset between sessions reduces privacy risk and keeps the tracker clean.
+  </Card>
+  <Card title="Use persistent memory when..." icon="database">
+    The data improves future conversations — a user's preferred name, their account tier, or a previously confirmed address. Persisting these reduces friction and makes the assistant feel genuinely helpful over time.
+  </Card>
+</CardGroup>
+
+<Tip>
+  Use `carry_over_slots_to_new_session: true` together with a persistent tracker
+  store so that slot values survive both session expiry and server restarts.
+  Without a persistent tracker store, slot values vanish when the process
+  restarts even if carry-over is enabled.
+</Tip>

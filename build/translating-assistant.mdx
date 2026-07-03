@@ -1,0 +1,199 @@
+---
+title: "Multilingual Assistants: Translate and Localize Your Rasa Bot"
+sidebarTitle: "Translations"
+description: "Build multilingual Rasa assistants using BCP 47 language codes. Define translated responses, flow names, and use the Response Rephraser for dynamic localization."
+---
+
+Supporting users in their preferred language makes your assistant more accessible, more engaging, and more effective in global markets. Rasa's multilingual support lets you define a primary language and any number of additional languages, then manage translations directly in your YAML files — no separate localization system required. You can also use the Contextual Response Rephraser to dynamically generate language-appropriate responses at runtime without maintaining every translation manually.
+
+## Configuring languages
+
+Set your assistant's primary language with the `language` key in `config.yml`. List additional supported languages under `additional_languages`. Use [BCP 47 language codes](https://en.wikipedia.org/wiki/IETF_language_tag) — most commonly ISO 639-1 two-letter codes:
+
+```yaml
+# config.yml
+recipe: default.v1
+language: en          # primary language
+additional_languages:
+  - de
+  - fr
+  - es
+```
+
+Rasa validates that the `language` slot only receives values from this set, preventing the assistant from entering an unknown language state.
+
+## Translating responses
+
+Define translations directly inside each response entry using the `translation` key. Keep all variants of a response in one place, which makes reviews and updates straightforward:
+
+```yaml
+# domain.yml
+responses:
+  utter_ask_help:
+    - text: "How can I help you?"
+      translation:
+        es: "¿En qué puedo ayudarte?"
+        fr: "Comment puis-je vous aider ?"
+        de: "Wie kann ich Ihnen helfen?"
+```
+
+Buttons and other rich content support the same `translation` key:
+
+```yaml
+# domain.yml
+responses:
+  utter_select_color:
+    - text: "Choose your favorite color:"
+      translation:
+        es: "Elige tu color favorito:"
+        fr: "Choisissez votre couleur préférée:"
+        de: "Wählen Sie Ihre Lieblingsfarbe:"
+      buttons:
+        - title: "Red"
+          payload: '/choose_color{"color":"red"}'
+          translation:
+            es:
+              title: "Rojo"
+              payload: '/choose_color{"color":"red"}'
+            fr:
+              title: "Rouge"
+              payload: '/choose_color{"color":"red"}'
+            de:
+              title: "Rot"
+              payload: '/choose_color{"color":"red"}'
+        - title: "Blue"
+          payload: '/choose_color{"color":"blue"}'
+          translation:
+            es:
+              title: "Azul"
+            fr:
+              title: "Bleu"
+            de:
+              title: "Blau"
+```
+
+<Note>
+  You can apply the `translation` key to any text-based content your assistant
+  sends — standard messages, button labels, link descriptions, and more. The
+  default (untranslated) text is always your primary language.
+</Note>
+
+## Translating flow names
+
+CALM's built-in conversation patterns reference flow names in system messages — for example, when confirming or cancelling an in-progress flow. Translate these names so the system messages appear in the user's language:
+
+```yaml
+# flows.yml
+flows:
+  greet_user:
+    name: "Greet User"
+    description: "Greets the user at the start of the conversation."
+    translation:
+      es:
+        name: "Saludar al usuario"
+      fr:
+        name: "Saluer l'utilisateur"
+      de:
+        name: "Benutzer begrüßen"
+    steps:
+      - action: utter_greet
+```
+
+## The built-in language slot
+
+Rasa provides a built-in `language` slot that controls which translation variant the assistant uses. You are responsible for setting this slot based on your users' preferences — from browser headers, geolocation, user profile settings, or any other signal relevant to your use case.
+
+A common approach is to set the language at session start:
+
+```python
+# actions.py
+class ActionSessionStart(Action):
+    def name(self) -> str:
+        return "action_session_start"
+
+    def run(self, dispatcher, tracker, domain) -> list:
+        language = get_language_from_user_profile(tracker)
+        return [SlotSet("language", language)]
+```
+
+<Warning>
+  `language` is a reserved keyword in Rasa. Do not use it as the name of a
+  custom slot — doing so will cause a conflict with the built-in language
+  management system.
+</Warning>
+
+## Dynamic translations with the Response Rephraser
+
+The [Contextual Response Rephraser](https://rasa.com/docs/reference/primitives/contextual-response-rephraser/) uses an LLM to reword responses at runtime based on the conversation context. Because the default rephraser prompt includes `"Use simple {{language}}"`, it automatically generates responses in whatever language the `language` slot is set to.
+
+Enable the rephraser in `endpoints.yml`:
+
+```yaml
+# endpoints.yml
+nlg:
+  type: rephrase
+  llm:
+    model_group: openai_llm
+```
+
+When the rephraser is active globally, Rasa skips the static translation warnings at validation time — the LLM generates appropriate language-specific output dynamically. This is useful when you support many languages and maintaining a full translation matrix would be impractical.
+
+## Validating translations
+
+Rasa provides two commands to check your multilingual setup:
+
+```bash
+# General validation — checks all domain, story, rule, and slot files
+rasa data validate
+
+# Translations-specific validation — individual warnings per missing translation
+rasa data validate translations
+```
+
+`rasa data validate` produces consolidated warnings: one for missing response translations, one for missing flow name translations. `rasa data validate translations` gives you a line-by-line breakdown so you can track down exactly which responses or flows need attention.
+
+### What triggers an error vs. a warning
+
+| Situation | Severity |
+|---|---|
+| A response is missing a translation for a configured language | Warning |
+| A flow name is missing a translation for a configured language | Warning |
+| The primary `language` also appears in `additional_languages` | Error |
+| A language code is invalid or incorrectly formatted | Error |
+
+## Migrating from conditional responses
+
+If you have an existing assistant that uses conditional slot-based responses for language selection, migrate to the `translation` key for a cleaner structure:
+
+<Tabs>
+  <Tab title="Old format (conditional)">
+    ```yaml
+    utter_ask_callback_wanted:
+      - text: "Would you like to arrange a callback?"
+        condition:
+          - type: slot
+            name: language
+            value: "English"
+      - text: "Möchten Sie einen Termin vereinbaren?"
+        condition:
+          - type: slot
+            name: language
+            value: "German"
+    ```
+  </Tab>
+  <Tab title="New format (translation key)">
+    ```yaml
+    utter_ask_callback_wanted:
+      - text: "Would you like to arrange a callback?"
+        translation:
+          de: "Möchten Sie einen Termin vereinbaren?"
+          fr: "Souhaitez-vous fixer un rendez-vous?"
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+  If you have a large existing assistant using the conditional format, reach out
+  to the Rasa team. They can help you automate the migration rather than
+  converting responses by hand.
+</Tip>

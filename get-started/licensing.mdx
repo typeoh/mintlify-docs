@@ -1,0 +1,110 @@
+---
+title: "Rasa Licensing: Developer Edition and Enterprise Plans"
+sidebarTitle: "Licensing"
+description: "Learn how Rasa licensing works, how to activate your free Developer Edition key, and when to upgrade to an Enterprise license for production scale."
+---
+
+Rasa requires a license key to run. The license key is not a time-limited trial — it controls which features and usage tiers you have access to. This page explains how to get a license, how to configure it in your environment, and when you should consider upgrading to an Enterprise plan.
+
+## Developer Edition (free)
+
+The Developer Edition is a free license designed for building and testing Rasa assistants locally. It gives you access to the full Rasa Pro feature set with one usage limit:
+
+- **Up to 1,000 conversations per month**
+
+This is plenty for development, prototyping, and learning. There is no time restriction — you can use the Developer Edition indefinitely as long as your conversation volume stays within the limit.
+
+[Request your free Developer Edition license key →](https://rasa.com/rasa-pro-developer-edition-license-key-request/)
+
+<Note>
+  A "conversation" in Rasa is counted as a single session between a user and your assistant. Conversations that stay within the 1,000/month limit are fully functional — there is no feature degradation.
+</Note>
+
+## Enterprise licenses
+
+For teams deploying assistants in production, Rasa offers Enterprise licenses with:
+
+- Unlimited conversations
+- Enterprise-grade security and compliance features
+- Scalability for high-traffic deployments
+- Dedicated support and SLAs
+
+[Contact Rasa to learn about Enterprise licensing →](https://rasa.com/contact-sales/)
+
+## How to set your license
+
+Rasa reads your license from the `RASA_LICENSE` environment variable. The value should be the full content of the license key string provided to you by Rasa.
+
+You can set it temporarily for the current terminal session, or persistently so it is always available when you open a new shell.
+
+<Tabs>
+  <Tab title="Bash / Linux / macOS">
+    **Temporary** (current terminal session only):
+
+    ```bash
+    export RASA_LICENSE=YOUR_LICENSE_STRING_HERE
+    ```
+
+    **Persistent** (survives new terminal sessions):
+
+    ```bash
+    echo "export RASA_LICENSE=YOUR_LICENSE_STRING_HERE" >> ~/.bashrc
+    ```
+
+    If you are using **Zsh** (the default on macOS), replace `.bashrc` with your shell's init file:
+
+    ```bash
+    echo "export RASA_LICENSE=YOUR_LICENSE_STRING_HERE" >> ~/.zshrc
+    ```
+
+    <Tip>
+      Some tools (like Claude Code) launch non-interactive shells that do not source `~/.zshrc`. In those cases, add the export to `~/.zshenv` instead — that file is always read regardless of shell type.
+    </Tip>
+  </Tab>
+
+  <Tab title="Windows PowerShell">
+    **Temporary** (current session only):
+
+    ```powershell
+    $env:RASA_LICENSE="YOUR_LICENSE_STRING_HERE"
+    ```
+
+    **Persistent** (for the current Windows user):
+
+    ```powershell
+    [System.Environment]::SetEnvironmentVariable('RASA_LICENSE','YOUR_LICENSE_STRING_HERE','USER')
+    ```
+  </Tab>
+</Tabs>
+
+Once the environment variable is set, all `rasa` CLI commands will automatically pick up the license. For example:
+
+```bash
+rasa init
+rasa train
+rasa inspect
+```
+
+## Check your license status
+
+You can inspect your current license details at any time with the `rasa license` command:
+
+```bash
+rasa license
+```
+
+This displays your license tier, expiration date (if applicable), and the conversation usage limit associated with your key.
+
+<Warning>
+  Never commit your license key to a public version control repository. Treat it like a password. Use environment variables or a secrets manager to keep it out of your codebase.
+</Warning>
+
+## Licensing in Docker and CI/CD
+
+When running Rasa in Docker or a CI/CD pipeline, pass the license through the container's environment rather than baking it into the image:
+
+```bash
+docker run -e RASA_LICENSE=${RASA_LICENSE} rasa/rasa-pro:RASAVERSION run
+```
+
+In CI/CD platforms (GitHub Actions, GitLab CI, etc.), store the license as an encrypted secret and inject it as an environment variable in your workflow configuration.

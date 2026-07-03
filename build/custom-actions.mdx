@@ -1,0 +1,273 @@
+---
+title: "Custom Actions: Integrate APIs and Business Logic"
+sidebarTitle: "Custom Actions"
+description: "Learn how to write Python custom actions using the Rasa SDK to call APIs, query databases, set slots, and send responses from within your flows."
+---
+
+Custom actions let your assistant run arbitrary code during a conversation — querying a database, calling an external API, performing a calculation, or anything else that can't be expressed as a static YAML step. When your assistant predicts a custom action, it hands off to your action server (or runs the action directly in the same process), which executes the logic and returns events and responses to Rasa.
+
+## The Flow-First Design Principle
+
+Before writing a custom action, keep one rule in mind: **put business logic in flows, not in custom actions**. A custom action should do the raw work — fetch data, call an API, return a result — and let the flow decide what to do with that result through branching.
+
+<CardGroup cols={2}>
+  <Card title="✅ Do this" icon="check">
+    Custom action fetches availability and sets a `has_availability` slot. The flow branches on that slot to show different responses.
+  </Card>
+  <Card title="❌ Avoid this" icon="xmark">
+    Custom action performs the API call, checks the result, and directly triggers different response utterances based on internal logic.
+  </Card>
+</CardGroup>
+
+Here is an example of flow-first design:
+
+```yaml flows.yml
+flows:
+  restaurant_booking:
+    description: Book a table at a restaurant for the user.
+    steps:
+      - collect: restaurant_name
+      - collect: party_size
+      - collect: preferred_time
+      - action: action_check_availability
+        next:
+          - if: slots.has_availability
+            then:
+              - action: utter_availability_confirmed
+              - action: action_confirm_booking
+          - else:
+              - action: utter_no_availability
+```
+
+```python actions.py
+from rasa_sdk.interfaces import Action
+from rasa_sdk.events import SlotSet
+
+class ActionCheckAvailability(Action):
+    def name(self):
+        return "action_check_availability"
+
+    def run(self, dispatcher, tracker, domain):
+        restaurant = tracker.get_slot("restaurant_name")
+        party_size = tracker.get_slot("party_size")
+        time = tracker.get_slot("preferred_time")
+
+        # Call your reservations API
+        result = reservations_api.check(restaurant, party_size, time)
+
+        return [SlotSet("has_availability", result.available)]
+```
+
+By keeping the branching in the flow, anyone reading the YAML immediately understands the conversation logic without digging into Python code.
+
+## Writing a Custom Action with the Rasa SDK
+
+The Rasa SDK (Python) is the easiest way to implement custom actions. Install it with `pip install rasa-sdk`.
+
+<Steps>
+  <Step title="Create an Action class">
+    Subclass `Action` and implement the two required methods: `name()` and `run()`.
+
+    ```python actions.py
+    from typing import Any, Dict, List, Text
+    from rasa_sdk import Action, Tracker
+    from rasa_sdk.executor import CollectingDispatcher
+    from rasa_sdk.events import SlotSet
+
+    class ActionCheckAccountBalance(Action):
+
+        def name(self) -> Text:
+            return "action_check_account_balance"
+
+        def run(
+            self,
+            dispatcher: CollectingDispatcher,
+            tracker: Tracker,
+            domain: Dict[Text, Any],
+        ) -> List[Dict[Text, Any]]:
+            ...
+    ```
+  </Step>
+
+  <Step title="Read slot values with the tracker">
+    Use `tracker.get_slot("slot_name")` to read the current value of any slot. You can also access the most recent user message via `tracker.latest_message.text`.
+
+    ```python
+    account_id = tracker.get_slot("account_id")
+    user_message = tracker.latest_message.text
+    ```
+  </Step>
+
+  <Step title="Implement your logic">
+    Call your API, query your database, or run your calculations. Keep this code focused — it should return a result, not make conversational decisions.
+
+    ```python
+    import requests
+
+    response = requests.get(
+        f"https://api.example.com/accounts/{account_id}/balance",
+        headers={"Authorization": f"Bearer {get_token()}"},
+    )
+    balance = response.json().get("balance", 0)
+    ```
+  </Step>
+
+  <Step title="Return events and optional responses">
+    Return a list of events. Use `SlotSet` to store data for the flow to branch on, and `dispatcher.utter_message()` if you want to send a message directly (use sparingly — prefer utter_ responses in flows).
+
+    ```python
+    # Send a message (optional — prefer utter_ actions in flows)
+    dispatcher.utter_message(
+        template="utter_balance_result",
+        balance=f"${balance:,.2f}"
+    )
+
+    # Return events
+    return [
+        SlotSet("account_balance", balance),
+        SlotSet("has_sufficient_funds", balance >= 0),
+    ]
+    ```
+  </Step>
+</Steps>
+
+## Complete Example: Fetch and Return Account Balance
+
+```python actions.py
+from typing import Any, Dict, List, Text
+import requests
+
+from rasa_sdk import Action, Tracker
+from rasa_sdk.executor import CollectingDispatcher
+from rasa_sdk.events import SlotSet
+
+class ActionFetchAccountBalance(Action):
+
+    def name(self) -> Text:
+        return "action_fetch_account_balance"
+
+    def run(
+        self,
+        dispatcher: CollectingDispatcher,
+        tracker: Tracker,
+        domain: Dict[Text, Any],
+    ) -> List[Dict[Text, Any]]:
+        account_id = tracker.get_slot("account_id")
+
+        try:
+            response = requests.get(
+                f"https://banking.example.com/accounts/{account_id}/balance",
+                timeout=5,
+            )
+            response.raise_for_status()
+            balance = response.json()["balance"]
+        except Exception:
+            dispatcher.utter_message(
+                text="I couldn't retrieve your balance right now. Please try again."
+            )
+            return []
+
+        return [
+            SlotSet("account_balance", balance),
+            SlotSet("has_sufficient_funds", balance > 0),
+        ]
+```
+
+## Registering Custom Actions in Your Domain
+
+List every custom action in the `actions` section of `domain.yml` so Rasa knows it exists:
+
+```yaml domain.yml
+actions:
+  - action_fetch_account_balance
+  - action_check_availability
+  - action_confirm_booking
+  - action_execute_transfer
+```
+
+Any response named with the `utter_` prefix does **not** need to be added here — Rasa resolves those automatically.
+
+## Key SDK Objects
+
+<Accordion title="tracker — Read conversation state">
+  The `Tracker` gives you access to the full conversation state:
+
+  ```python
+  # Read a slot value
+  value = tracker.get_slot("slot_name")
+
+  # Get the latest user message
+  message = tracker.latest_message.text
+
+  # Get the conversation ID
+  conversation_id = tracker.sender_id
+  ```
+</Accordion>
+
+<Accordion title="dispatcher — Send messages to the user">
+  Use the `CollectingDispatcher` to send responses:
+
+  ```python
+  # Send a plain text message
+  dispatcher.utter_message(text="Something went wrong.")
+
+  # Use a domain response template (with optional variables)
+  dispatcher.utter_message(template="utter_greet", name="Alice")
+
+  # Send buttons
+  dispatcher.utter_message(
+      text="Which card?",
+      buttons=[
+          {"title": "Visa ending 1234", "payload": "/SetSlots(card_id=1234)"},
+          {"title": "Mastercard ending 5678", "payload": "/SetSlots(card_id=5678)"},
+      ]
+  )
+  ```
+</Accordion>
+
+<Accordion title="Events — Update conversation state">
+  Return events from `run()` to modify the conversation state:
+
+  ```python
+  from rasa_sdk.events import SlotSet, FollowupAction, AllSlotsReset
+
+  return [
+      SlotSet("account_balance", 250.00),      # set a slot
+      SlotSet("needs_verification", None),      # clear a slot
+  ]
+  ```
+
+  Common events:
+
+  | Event | Purpose |
+  |---|---|
+  | `SlotSet(name, value)` | Set a slot to a value (use `None` to clear) |
+  | `FollowupAction(name)` | Force a specific action to run next |
+  | `AllSlotsReset()` | Clear all slot values |
+  | `ConversationPaused()` | Pause the conversation (human handoff) |
+</Accordion>
+
+## Hosting Options
+
+You have two ways to run custom actions:
+
+<CardGroup cols={2}>
+  <Card title="Standalone Action Server" icon="server">
+    Run actions in a separate process. Rasa calls your server via HTTP POST. Best for production deployments where you want isolation, separate scaling, or security boundaries.
+
+    ```yaml endpoints.yml
+    action_endpoint:
+      url: "http://localhost:5055/webhook"
+    ```
+  </Card>
+  <Card title="Integrated Execution" icon="bolt">
+    Run actions directly inside the Rasa process. No network round-trip, simpler local development. Set `actions_module` to your Python package name.
+
+    ```yaml endpoints.yml
+    action_endpoint:
+      actions_module: "actions"
+    ```
+  </Card>
+</CardGroup>
+
+See [Action Server](/build/action-server) for full setup instructions for both options.

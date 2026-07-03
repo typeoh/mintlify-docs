@@ -1,0 +1,198 @@
+---
+title: "Rasa Analytics: Monitor Conversations and Business Metrics"
+sidebarTitle: "Analytics"
+description: "Track conversation volume, containment, escalation rates, and flow performance using Rasa Studio's dashboard or the Rasa Pro Services analytics pipeline."
+---
+
+Understanding how your assistant performs in production requires more than checking that it starts without errors. You need to know how many conversations it handles, how often users are escalated to a human agent, which flows complete successfully, and where users drop off. Rasa gives you two ways to answer these questions: the built-in Analytics dashboard in Rasa Studio for a quick operational view, and the Rasa Pro Services analytics pipeline for full data warehouse access and custom BI tooling.
+
+## Two analytics approaches
+
+<CardGroup cols={2}>
+  <Card title="Studio Analytics Dashboard" icon="chart-line">
+    Built-in dashboard in Rasa Studio showing conversation volume, containment, latency, and CSAT. No additional infrastructure required beyond a Kafka connection.
+  </Card>
+  <Card title="Pro Services Pipeline" icon="database">
+    Stream raw conversation events via Kafka to a data warehouse. Query with any SQL tool or BI platform for fully custom metrics and business KPIs.
+  </Card>
+</CardGroup>
+
+## Studio analytics dashboard
+
+Rasa Studio ships a built-in analytics dashboard that gives you a clear operational view of your assistant's health. Open the **Analytics** section in Rasa Studio to see four key metrics at a glance.
+
+### Core metrics
+
+**Conversation Volume** shows the total number of conversation sessions in your selected time period, split into successful and unsuccessful based on criteria you define. By default, any session resolved without escalating to a human agent counts as successful. You can reconfigure success criteria in Settings to reflect what matters for your use case—for example, only counting sessions where a specific booking flow was completed.
+
+**Containment** measures what percentage of conversations were handled entirely by the assistant without escalating to a human. To measure containment accurately, your assistant must have `action_human_handoff` configured so Rasa can detect when escalation happens.
+
+**Latency** shows the average time between a user message being received and the assistant's reply being sent. Latency Insights breaks this down into p50, p95, and p99 percentile trend lines so you can distinguish general slowdowns from tail latency issues affecting a small subset of users.
+
+**CSAT (Customer Satisfaction)** shows the percentage of conversations where users provided positive feedback. The `pattern_customer_satisfaction` pattern handles CSAT collection automatically after a conversation ends. Ratings from 3–5 on a 1–5 scale are counted as Satisfied; 1–2 are Dissatisfied; no response is tracked separately.
+
+### Filters
+
+Use the dashboard filters to slice your data:
+
+| Filter | Description |
+|---|---|
+| Time period | Select a preset range or define a custom window |
+| Assistant version | Compare performance across different model releases |
+| Channel | Isolate metrics by chat, IVR, or other channels |
+
+### Containment Insights
+
+The Containment Insights panel surfaces a ranked list of flows with the lowest containment rates—those most often resulting in handoffs to a human agent. Use this list to prioritize which flows need better design, additional knowledge, or more training data.
+
+### Viewing conversations from the chart
+
+Click any bar in the Conversation Volume chart to open a filtered list of the individual conversations that make up that data point. From there, open any conversation to see the full session transcript in Conversation Review.
+
+### Direct data access
+
+If you want to pipe analytics data into your own dashboards, you can connect directly to the Studio analytics database. See the [Studio Analytics Database documentation](https://rasa.com/docs/reference/integrations/analytics-database/) for connection details.
+
+## Rasa Pro Services analytics pipeline
+
+For custom analytics and business KPIs, the Rasa Pro Services pipeline streams conversation events from your assistant through Kafka to a data warehouse of your choice. This gives you full control over how you store, transform, and visualize your data.
+
+### Prerequisites
+
+1. **A Kafka instance** — Rasa Pro Services requires a production-ready Kafka broker. A managed service like Amazon MSK simplifies maintenance.
+2. **Rasa Pro Services** deployed alongside your assistant (see [Kubernetes deployment](./deploy-kubernetes)).
+3. **(Optional) A data warehouse** — PostgreSQL and Redshift are supported natively. You can sync BigQuery or Snowflake via intermediate pipelines.
+
+### What you can track
+
+Once events are streaming to your warehouse, you can compute metrics across four categories:
+
+<Tabs>
+  <Tab title="User analytics">
+    - Session frequency per user
+    - User demographics (from slot data)
+    - Feedback and sentiment scores
+  </Tab>
+  <Tab title="Usage analytics">
+    - Total sessions per day/week/month
+    - Average session duration
+    - Active channels and their relative volume
+    - Error rates
+  </Tab>
+  <Tab title="Conversation analytics">
+    - Top flows triggered
+    - Average number of turns per session
+    - Drop-off at specific flow steps
+    - Escalation and human handoff patterns
+  </Tab>
+  <Tab title="Business analytics">
+    - Containment rate
+    - Flow completion (resolution) rates
+    - ROI per line of business
+    - Interruption and resumption rates
+  </Tab>
+</Tabs>
+
+### Example SQL queries
+
+The following queries work against the Rasa Pro Services schema in PostgreSQL or Redshift.
+
+**Sessions per month:**
+
+```sql
+SELECT
+  date_trunc('month', "public"."rasa_session"."timestamp") AS "month",
+  count(*) AS "session_count"
+FROM "public"."rasa_session"
+GROUP BY 1
+ORDER BY 1 ASC
+```
+
+**Sessions per channel per week:**
+
+```sql
+SELECT
+  "public"."rasa_sender"."channel" AS "channel",
+  "public"."rasa_sender"."first_seen" AS "timestamp",
+  count(distinct "public"."rasa_sender"."sender_key") AS "count"
+FROM "public"."rasa_sender"
+GROUP BY 1, 2
+ORDER BY 1 ASC, 2 ASC
+```
+
+**Top 5 flows in the last 7 days:**
+
+```sql
+SELECT
+  rasa_flow_status.flow_identifier,
+  COUNT(DISTINCT rasa_flow_status.session_id) AS "count"
+FROM rasa_flow_status
+WHERE rasa_flow_status.flow_identifier NOT LIKE 'pattern_%'
+  AND rasa_flow_status.inserted_at >= NOW() AT TIME ZONE 'UTC' - INTERVAL '7 days'
+GROUP BY 1
+ORDER BY 2 DESC, 1 ASC
+LIMIT 5
+```
+
+**Escalation rate by month:**
+
+```sql
+WITH sessions AS (
+  SELECT
+    rasa_llm_command.session_id,
+    date_trunc('month', rasa_llm_command.inserted_at) AS "month",
+    CASE rasa_llm_command.command
+      WHEN 'human handoff' THEN 1 ELSE 0
+    END AS has_handoff
+  FROM rasa_llm_command
+),
+sessions_with_handoff AS (
+  SELECT session_id, month, SUM(has_handoff) AS has_handoff
+  FROM sessions
+  GROUP BY 1, 2
+)
+SELECT
+  month,
+  100.0 * SUM(has_handoff) / count(*) AS "escalation_rate_pct"
+FROM sessions_with_handoff
+GROUP BY 1
+ORDER BY 1 ASC
+```
+
+**Resolution rate for a specific flow:**
+
+```sql
+WITH completed AS (
+  SELECT COUNT(DISTINCT session_id) AS completed_count
+  FROM rasa_flow_status
+  WHERE flow_identifier = 'transfer_money'
+    AND flow_status = 'completed'
+)
+SELECT
+  100 * (SELECT completed_count FROM completed)
+    / NULLIF(COUNT(DISTINCT session_id), 0) AS "resolution_rate_pct"
+FROM rasa_flow_status
+WHERE flow_identifier = 'transfer_money'
+  AND flow_status = 'started'
+```
+
+**Drop-off (interruption rate) for a specific flow:**
+
+```sql
+WITH interrupted AS (
+  SELECT COUNT(DISTINCT session_id) AS interrupted_count
+  FROM rasa_flow_status
+  WHERE flow_identifier = 'setup_recurrent_payment'
+    AND flow_status = 'interrupted'
+)
+SELECT
+  100 * (SELECT interrupted_count FROM interrupted)
+    / NULLIF(COUNT(DISTINCT session_id), 0) AS "interruption_rate_pct"
+FROM rasa_flow_status
+WHERE flow_identifier = 'setup_recurrent_payment'
+  AND flow_status = 'started'
+```
+
+<Tip>
+  Connect the Rasa Pro Services database to an open-source BI tool like Metabase or a commercial platform like Tableau or Power BI to build dashboards without writing SQL for every metric. The raw tables give you the flexibility to define any KPI relevant to your business domain.
+</Tip>

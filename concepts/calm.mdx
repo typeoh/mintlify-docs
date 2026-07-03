@@ -1,0 +1,91 @@
+---
+title: "What is CALM? Rasa's LLM Dialogue System Explained"
+sidebarTitle: "CALM"
+description: "CALM combines LLM-powered understanding with deterministic flow execution to build reliable, scalable conversational AI assistants."
+---
+
+CALM (Conversational AI with Language Models) is the dialogue system that powers Rasa text and voice assistants. It interprets what users say, decides what to do next, and keeps conversations on track — all without letting the LLM invent business logic on the fly. By combining the flexibility of language models with the reliability of predefined flows, CALM lets you build assistants that are both fluent and trustworthy.
+
+## Key Benefits
+
+<CardGroup cols={2}>
+  <Card title="Separation of Concerns" icon="layer-group">
+    LLMs handle language understanding while deterministic flows own your business logic. The model interprets intent — it never guesses what your assistant should do next.
+  </Card>
+  <Card title="Built-in Conversational Awareness" icon="comments">
+    CALM automatically detects and handles common conversational patterns like topic changes, corrections, and clarifications, so users always feel heard.
+  </Card>
+  <Card title="Deterministic Execution" icon="circle-check">
+    Your assistant follows structured workflows at every turn, making interactions predictable, debuggable, and auditable.
+  </Card>
+  <Card title="Designed for Efficiency" icon="bolt">
+    CALM is optimized for smaller, fine-tuned models like Llama 8B, reducing inference latency and hosting costs without sacrificing quality.
+  </Card>
+</CardGroup>
+
+## How CALM Works
+
+CALM processes every user message through up to three stages. The LLM understands the input and suggests the next steps; the dialogue manager executes those steps deterministically; and an optional rephraser can make templated responses sound more natural.
+
+<Steps>
+  <Step title="Dialogue Understanding">
+    When a user sends a message, CALM reads the full conversation transcript — including collected slots and context — and passes it to an LLM. The model generates a set of internal **commands** (for example, `StartFlow("transfer_money")` or `SetSlot(amount, 100)`) that represent how the user wants to move the conversation forward. The LLM suggests next steps but never executes them directly.
+  </Step>
+  <Step title="Dialogue Management">
+    The dialogue manager receives those commands and acts on them deterministically. It routes through flows, collects information, calls backend integrations, and triggers conversation patterns when users go off-script — all within the boundaries of the business logic you have defined. Nothing happens outside your flows.
+  </Step>
+  <Step title="Contextual Response Rephraser (Optional)">
+    By default, your assistant sends the templated messages you define. If you enable the contextual response rephraser, an LLM rewrites those templates to fit naturally into the current conversation. You can enable the rephraser for all responses or only specific ones, and you can customize the rephrasing prompt.
+  </Step>
+</Steps>
+
+<Tip>
+  The dialogue understanding commands are discrete and inspectable. When something goes wrong, you can read the exact commands the model generated and pinpoint the cause — no guesswork required.
+</Tip>
+
+## CALM vs. Other Approaches
+
+The table below compares CALM assistants with ReAct-style LLM agents and classic NLU chatbots across the concerns that matter most in production.
+
+| Concern | LLM-Centric (ReAct-Style) | **Hybrid (CALM)** | Classic (NLU Bot) |
+|---|---|---|---|
+| **Suitable Use Cases** | Best for open-ended, exploratory tasks where flexibility outweighs structure. | Ideal for structured tasks with clear goals, balancing conversational fluency and reliability. | Best when LLMs are unavailable; delivers fully deterministic outcomes. |
+| **Understanding the User** | The LLM combines understanding and action in every exchange, deciding what to do as it interprets input. | The LLM understands input in full conversation context. Task execution is separate, handled by flows. | Classifies only the latest message as an intent, without full conversation context. |
+| **Deciding the Next Step** | Business logic lives in LLM prompts, leading to inconsistent, on-the-fly decisions. | Business logic is defined in flows. The LLM dynamically routes between them but never invents steps. | Business logic is predefined in dialogue trees that break when users deviate from the expected path. |
+| **Scaling to Many Tasks** | Performance degrades as more agents and tasks are added, with cascading errors and complex guardrails. | Scales reliably to many topics via reusable, modular flows. | As the NLU model grows, accuracy suffers from topic overlap and maintenance becomes difficult. |
+| **Ease of Troubleshooting** | Debugging requires reading unstructured LLM output and making random changes until something works. | Discrete commands separate reasoning from execution, letting you pinpoint exactly why the assistant behaved a certain way. | Root cause analysis is straightforward since all paths are pre-planned, but fixes can be hard to implement due to rigidity. |
+| **Production Cost** | High cost and latency from multiple serial LLM calls. | Cost-efficient with smaller, fine-tuned models like Llama 8B to reduce latency and expenses. | Very low cost and latency with NLU models. |
+
+## Smaller Models, Big Results
+
+CALM works out of the box with state-of-the-art models like GPT-4, but it is also designed to run on fine-tuned models as small as Llama 8B. This gives you:
+
+- **Faster response times** — essential for real-time voice assistants where every millisecond matters.
+- **Predictable costs** — shift from per-token pricing to fixed hosting costs using self-hosted or Hugging Face deployments.
+- **Deployment control** — run on private infrastructure for full ownership over performance, security, and data residency.
+
+<Note>
+  If you use CALM in academic research, please consider citing the [CALM research paper](https://arxiv.org/abs/2402.12234).
+</Note>
+
+## Who CALM Is For
+
+<CardGroup cols={3}>
+  <Card title="AI/ML Practitioners" icon="brain">
+    Build scalable conversational systems without sacrificing control over what your model actually does.
+  </Card>
+  <Card title="Conversation Designers" icon="pen-nib">
+    Focus on great user journeys and business logic instead of accounting for every possible detour.
+  </Card>
+  <Card title="Businesses" icon="building">
+    Ship robust, next-generation AI applications with the reliability and auditability that production demands.
+  </Card>
+</CardGroup>
+
+## Learn More
+
+- [Follow the CALM video tutorial](https://youtu.be/6vaQP1VC95k?feature=shared)
+- [Get CALM certified](https://learning.rasa.com/#rasa-pro-courses)
+- [Read about smaller models with Llama 8B](https://rasa.com/blog/reliable-agentic-bots-with-llama-8b/)
+- Continue to [Flows](/concepts/flows) to learn how business logic is defined
+- Continue to [Conversation Patterns](/concepts/conversation-patterns) to understand how CALM handles unexpected input

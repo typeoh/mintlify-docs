@@ -1,0 +1,273 @@
+---
+title: "Rasa Configuration Files: config.yml and endpoints.yml"
+sidebarTitle: "Configuration"
+description: "Reference for Rasa's two main configuration files — config.yml for the NLU pipeline and policies, and endpoints.yml for services and LLM providers."
+---
+
+Every Rasa assistant project is controlled through two primary configuration files: `config.yml`, which defines the NLU pipeline and dialogue policies, and `endpoints.yml`, which connects your assistant to external services such as action servers, databases, event brokers, and LLM providers. Understanding both files is essential before you train or run an assistant.
+
+## config.yml
+
+`config.yml` tells Rasa how to process messages and manage dialogue. A minimal working configuration for a CALM assistant looks like this:
+
+```yaml
+recipe: default.v1
+language: en
+assistant_id: 20230405-114328-tranquil-mustard
+
+pipeline:
+  - name: CompactLLMCommandGenerator
+
+policies:
+  - name: rasa.core.policies.flow_policy.FlowPolicy
+```
+
+<Tip>
+Running `rasa init` creates an NLU-based project by default. To get the correct CALM `config.yml` scaffold, run `rasa init --template calm`.
+</Tip>
+
+### Key top-level fields
+
+<Accordion title="recipe">
+Controls which graph recipe Rasa uses internally. Almost all projects should leave this at the default value:
+
+```yaml
+recipe: default.v1
+```
+
+Only modify this if you are building a custom graph recipe.
+</Accordion>
+
+<Accordion title="assistant_id">
+A unique identifier for this assistant. It is attached to every event your assistant emits, so you can distinguish multiple deployed assistants in your analytics pipeline.
+
+```yaml
+assistant_id: 20230405-114328-tranquil-mustard
+```
+
+If you omit this key or leave the placeholder unchanged, Rasa generates a random name each time you run `rasa train`.
+</Accordion>
+
+<Accordion title="language / additional_languages">
+Set the primary language with a [BCP 47](https://en.wikipedia.org/wiki/IETF_language_tag) language code (e.g., `en`, `de`, `fr-CA`). Use `additional_languages` if your assistant supports multiple languages:
+
+```yaml
+language: "en"
+additional_languages:
+  - "it"   # Italian
+  - "de"   # German
+  - "fr"   # French
+```
+
+Rasa follows BCP 47, which ensures compatibility with platforms like Twilio Voice, Genesys Cloud, and Amazon Connect.
+</Accordion>
+
+<Accordion title="pipeline">
+The pipeline lists NLU components that process incoming user messages. For CALM assistants, the pipeline produces a list of [commands](https://rasa.com/docs/reference/config/components/llm-command-generators/#command-reference). The central component is your chosen `LLMCommandGenerator`.
+
+```yaml
+pipeline:
+  - name: CompactLLMCommandGenerator
+    llm:
+      model_group: openai_llm
+    flow_retrieval:
+      embeddings:
+        model_group: openai_embeddings
+    user_input:
+      max_characters: 420
+```
+
+The `model_group` identifiers reference groups defined in `endpoints.yml`. See [LLM Providers](/reference/llm-providers) for full configuration options.
+</Accordion>
+
+<Accordion title="policies">
+Policies control how your assistant selects the next action during dialogue. CALM assistants use `FlowPolicy`:
+
+```yaml
+policies:
+  - name: rasa.core.policies.flow_policy.FlowPolicy
+```
+
+`FlowPolicy` currently has no additional configuration parameters.
+</Accordion>
+
+### Silence timeout (voice channels)
+
+For voice-stream channels (Twilio Media Streams, Browser Audio, Genesys, Jambonz, Audiocodes), you can configure how long Rasa waits for a user response before triggering fallback logic.
+
+**Global silence timeout** — set in `endpoints.yml`:
+
+```yaml
+# endpoints.yml
+interaction_handling:
+  global_silence_timeout: 7   # seconds; default is 7
+```
+
+**Per-channel timeout** — set in `credentials.yml`:
+
+```yaml
+# credentials.yml
+twilio_media_streams:
+  silence_timeout: 10
+```
+
+**Per-step override** — set inside a flow's `collect` step:
+
+```yaml
+steps:
+  - collect:
+      name: ask_email
+      silence_timeout: 10           # applies to all channels
+      # or channel-specific:
+      # silence_timeout:
+      #   twilio_media_streams: 10
+```
+
+When silence is detected, Rasa triggers `pattern_user_silence`. Customize that pattern to control the fallback behavior.
+
+---
+
+## endpoints.yml
+
+`endpoints.yml` connects your assistant to external services. It also hosts LLM model group definitions (from Rasa Pro 3.11+).
+
+### Minimal example
+
+```yaml
+action_endpoint:
+  url: "http://localhost:5055/webhook"
+
+model_groups:
+  - id: openai_llm
+    models:
+      - provider: openai
+        model: gpt-5.1-2025-11-13
+
+  - id: openai_embeddings
+    models:
+      - provider: openai
+        model: text-embedding-3-large
+```
+
+### Key sections
+
+<Accordion title="action_endpoint">
+Points Rasa at your action server. You can also enable selective domain to control which actions receive the full domain object:
+
+```yaml
+action_endpoint:
+  url: "http://localhost:5055/webhook"
+  enable_selective_domain: true
+```
+
+</Accordion>
+
+<Accordion title="model_groups (LLMs)">
+`model_groups` is where you declare all LLM and embedding deployments. Each entry has a unique `id` that components in `config.yml` reference by name:
+
+```yaml
+model_groups:
+  - id: openai_direct
+    models:
+      - provider: openai
+        model: gpt-5.1-2025-11-13
+        timeout: 7
+        temperature: 1.0
+
+  - id: azure_llm
+    models:
+      - provider: azure
+        deployment: ${AZURE_DEPLOYMENT_NAME}
+        api_base: ${AZURE_API_BASE}
+        api_version: ${AZURE_API_VERSION}
+        api_key: ${MY_AZURE_API_KEY}
+        timeout: 7
+```
+
+Use `${VAR_NAME}` syntax to reference environment variables for any sensitive values. See [LLM Providers](/reference/llm-providers) for a complete provider list with example configs.
+</Accordion>
+
+<Accordion title="tracker_store">
+Configures where Rasa persists conversation state. The default is an in-memory store (not suitable for production). A PostgreSQL example:
+
+```yaml
+tracker_store:
+  type: sql
+  dialect: postgresql
+  url: ${DATABASE_URL}
+  db: rasa
+  username: ${DB_USER}
+  password: ${DB_PASSWORD}
+```
+
+</Accordion>
+
+<Accordion title="event_broker">
+Configures an event broker so Rasa publishes conversation events to a message queue (Kafka or RabbitMQ):
+
+```yaml
+event_broker:
+  type: kafka
+  url: localhost
+  topic: rasa_core_events
+```
+
+</Accordion>
+
+<Accordion title="nlg (Contextual Response Rephraser)">
+To enable LLM-powered contextual response rephrasing, add an `nlg` section:
+
+```yaml
+nlg:
+  type: rephrase
+  llm:
+    model_group: openai_llm
+```
+
+</Accordion>
+
+<Accordion title="tracing">
+Configure OpenTelemetry or Langfuse tracing for observability:
+
+```yaml
+tracing:
+  - type: langfuse
+    public_key: ${LANGFUSE_PUBLIC_KEY}
+    private_key: ${LANGFUSE_PRIVATE_KEY}
+    host: https://cloud.langfuse.com
+```
+
+</Accordion>
+
+### Using environment variables
+
+Any value in `endpoints.yml` (or `config.yml`) can reference an environment variable using the `${VAR_NAME}` syntax:
+
+```yaml
+model_groups:
+  - id: openai_direct
+    models:
+      - provider: openai
+        model: gpt-5.1-2025-11-13
+        api_key: ${OPENAI_API_KEY}
+```
+
+This keeps secrets out of your source code. You can set variables in your shell, a `.env` file, Docker `-e` flags, or Kubernetes secrets. See [Environment Variables](/reference/environment-variables) for a full reference.
+
+---
+
+## domain.yml
+
+The `domain.yml` file registers the building blocks your assistant uses at runtime — responses, slots, and custom actions. See the [Domain Reference](/reference/domain) for full details.
+
+---
+
+## Multiple config files
+
+You can split your domain across multiple files in a directory. Train against a directory instead of a single file:
+
+```bash
+rasa train --domain path/to/domain_directory/
+```
+
+Rasa automatically merges all YAML files it finds in that directory.

@@ -1,0 +1,202 @@
+---
+title: "Actions: Controlling Your Rasa Assistant's Behavior"
+sidebarTitle: "Actions"
+description: "Actions are what your Rasa assistant does at each step — send a message, call an API, query a database, or set a slot based on business logic."
+---
+
+Actions are the execution units of your Rasa assistant. Every time your assistant needs to do something — reply to the user, call an API, update a slot, or hand off to a human — it runs an action. There are three types: **responses** (templated messages), **default actions** (built-in system behaviors), and **custom actions** (arbitrary code you write). Understanding how and when to use each type is key to building a well-structured assistant.
+
+## Responses
+
+A response is the action you will use most often. Responses are templated messages defined in your `domain.yml` file under the `responses` key. Every response name starts with `utter_`, and any response starting with `utter_` can be called directly as an action in a flow without being listed in the `actions` section.
+
+```yaml domain.yml
+responses:
+  utter_greet:
+    - text: "Hi there! How can I help you today?"
+
+  utter_transfer_complete:
+    - text: "Done! I've sent {amount} to {recipient}."
+
+  utter_ask_confirmation:
+    - text: "Would you like to confirm?"
+      buttons:
+        - title: "Yes"
+          payload: "/SetSlots(confirmed=true)"
+        - title: "No"
+          payload: "/SetSlots(confirmed=false)"
+```
+
+You reference a response as an action step in a flow using the response name:
+
+```yaml flows.yml
+flows:
+  greet_user:
+    description: Greets the user at the start of the conversation
+    steps:
+      - action: utter_greet
+```
+
+### Rich Response Types
+
+<CardGroup cols={3}>
+  <Card title="Text" icon="message">
+    Plain messages, optionally with slot variables like `{name}` that Rasa fills automatically from the current conversation state.
+  </Card>
+  <Card title="Buttons" icon="hand-pointer">
+    Clickable options that set slots or trigger intents. Buttons skip the NLU pipeline entirely, making them reliable for structured choices.
+  </Card>
+  <Card title="Images" icon="image">
+    Include a URL under the `image` key to send a visual element alongside your text response.
+  </Card>
+</CardGroup>
+
+### Response Variations
+
+Provide multiple variations under the same response name to keep your assistant from sounding repetitive. Rasa selects one at random:
+
+```yaml domain.yml
+responses:
+  utter_greet:
+    - text: "Hey, {name}! How are you doing?"
+    - text: "Hi {name}, great to hear from you. What can I help with?"
+    - text: "Hello! What brings you in today?"
+```
+
+You can also define **conditional variations** that select based on slot values:
+
+```yaml domain.yml
+responses:
+  utter_greet:
+    - condition: slots.prior_visits > 1
+      text: "Welcome back, {name}! What can I do for you?"
+    - text: "Hi there! How can I help you today?"
+```
+
+## Default Actions
+
+Default actions are built-in actions that Rasa executes automatically in specific system situations. You don't need to declare them in your domain — they are always available. You can override any default action by implementing a custom action with the same name.
+
+| Action | When it runs |
+|---|---|
+| `action_session_start` | At the start of every new conversation session |
+| `action_restart` | When the `pattern_restart` flow is triggered |
+| `action_listen` | After every response, to wait for the next user input |
+| `action_cancel_flow` | When a cancellation pattern cancels the current flow |
+| `action_correct_flow_slot` | When a correction pattern updates a previously set slot |
+| `action_repeat_bot_messages` | When a user asks the assistant to repeat the last message |
+| `action_handoff_metric` | When a human handoff pattern is triggered |
+| `action_clarify_flows` | When the clarification pattern asks the user to disambiguate |
+
+<Tip>
+  To override a default action, create a custom action with the exact same name in your actions server. The custom implementation replaces the built-in behavior while keeping the same trigger conditions.
+</Tip>
+
+## Custom Actions
+
+Custom actions let you run any Python code you need — query a database, call a REST API, compute a value, or set multiple slots at once. You write custom actions using the [Rasa SDK](https://rasa.com/docs/reference/integrations/action-server/) and run them in a separate action server that Rasa calls at runtime.
+
+Every custom action class implements two methods: `name()`, which returns the action's identifier, and `run()`, which contains the logic and returns a list of events.
+
+```python actions.py
+from rasa_sdk import Action, Tracker
+from rasa_sdk.events import SlotSet
+from rasa_sdk.executor import CollectingDispatcher
+
+
+class CheckRestaurantAvailability(Action):
+    def name(self) -> str:
+        return "check_restaurant_availability"
+
+    def run(
+        self,
+        dispatcher: CollectingDispatcher,
+        tracker: Tracker,
+        domain: dict,
+    ) -> list:
+        # Call your backend or API here
+        restaurant_name = tracker.get_slot("restaurant_name")
+        date = tracker.get_slot("reservation_date")
+
+        # Example: check availability from an external service
+        has_availability = True  # replace with real API call
+
+        if not has_availability:
+            dispatcher.utter_message(
+                text=f"Sorry, {restaurant_name} has no tables on {date}."
+            )
+
+        return [SlotSet("has_availability", has_availability)]
+```
+
+You call the custom action from a flow step using its name:
+
+```yaml flows.yml
+flows:
+  book_restaurant:
+    description: Books a restaurant table for the user
+    steps:
+      - collect: restaurant_name
+      - collect: reservation_date
+      - action: check_restaurant_availability
+        next:
+          - if: slots.has_availability
+            then:
+              - collect: party_size
+              - action: action_confirm_reservation
+          - else:
+            - action: utter_no_availability
+```
+
+### Common Events Returned by Custom Actions
+
+| Event | What it does |
+|---|---|
+| `SlotSet("name", value)` | Sets a slot to the given value |
+| `SlotSet("name", None)` | Resets a slot to null |
+| `FollowupAction("action_name")` | Queues another action to run immediately after |
+| `ConversationPaused()` | Pauses the conversation (use with care) |
+| `AllSlotsReset()` | Clears all slots in the current session |
+
+### Sending Messages from Custom Actions
+
+Use the `dispatcher` object to send messages from inside a custom action:
+
+```python actions.py
+# Send plain text
+dispatcher.utter_message(text="Here is your account balance: $240.00")
+
+# Use a domain response template
+dispatcher.utter_message(response="utter_transfer_complete")
+
+# Send buttons programmatically
+dispatcher.utter_message(
+    text="Which card would you like to use?",
+    buttons=[
+        {"title": "Visa ending 4242", "payload": "/SetSlots(card_id=visa_4242)"},
+        {"title": "Mastercard ending 1234", "payload": "/SetSlots(card_id=mc_1234)"},
+    ]
+)
+```
+
+## Flow-First Design
+
+<CardGroup cols={2}>
+  <Card title="Keep Logic in Flows" icon="sitemap">
+    Define what information to collect, what order to do things, and what to do when conditions are met — all in your flow YAML. Flows are readable, version-controlled, and easy to change without touching Python code.
+  </Card>
+  <Card title="Use Custom Actions for Raw Work" icon="gears">
+    Reserve custom actions for tasks that require code: API calls, database queries, complex computations, and dynamic message generation. Keep action code focused and side-effect-free where possible.
+  </Card>
+</CardGroup>
+
+<Warning>
+  Custom actions run in a separate process. Make sure your action server is reachable from your Rasa server, and add every custom action name to the `actions` key in your `domain.yml`.
+</Warning>
+
+## Learn More
+
+- [Custom Actions reference](/build/custom-actions) — full SDK documentation
+- [Responses reference](/build/responses) — all response properties including conditional and channel-specific variations
+- [Default Actions reference](/concepts/actions) — complete list of built-in actions and how to override them
+- [Flows](/concepts/flows) — how actions fit into flow steps

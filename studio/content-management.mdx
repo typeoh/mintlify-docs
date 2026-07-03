@@ -1,0 +1,170 @@
+---
+title: "Managing Responses, Slots, and NLU in Rasa Studio"
+sidebarTitle: "Content Management"
+description: "Use Rasa Studio's CMS to centrally manage all responses, slots, NLU data, and translations across your assistant's conversational content."
+---
+
+Rasa Studio includes a built-in content management system (CMS) that gives you a single place to manage everything your assistant says and remembers. Instead of hunting through individual flows to update a response or rename a slot, you can make changes centrally and have them reflected everywhere that content is used.
+
+Access the CMS from the left-hand navigation menu under the **CMS** section, where you'll find separate areas for Responses, Slots, NLU data, and Flows.
+
+## Responses
+
+The Responses section is where content managers and flow builders create and manage all the messages your assistant sends. This includes greeting messages, questions, confirmations, error messages, and any other text the assistant delivers to users.
+
+### Creating a Response
+
+<Steps>
+  <Step title="Open the Responses section">
+    Select **Responses** under **CMS** in the left navigation.
+  </Step>
+  <Step title="Click Create response">
+    Click the **Create response** button in the top-right corner.
+  </Step>
+  <Step title="Select the response type">
+    Choose from:
+    - **Message** — a standard bot message sent in a Send Message step
+    - **Collect information** — a question used in a Collect Information step (supports buttons)
+    - **Invalid input** — an error message shown when a slot value fails validation
+  </Step>
+  <Step title="Name and write the response">
+    Enter a name and write the standard response text. For Collect information responses, you can also add quick-reply buttons here.
+  </Step>
+  <Step title="Configure rephrasing">
+    The **Use contextual response rephraser** option defaults to the global `rephrase_all` value from your `endpoints.yml`. Toggle it on to have an LLM rephrase the response naturally on each use, or off to use the exact text every time. You can also add manual variations—Rasa picks one randomly—by clicking **Add variation**.
+  </Step>
+</Steps>
+
+### Adding Buttons and Links
+
+Each response can include interactive elements to guide users toward structured choices.
+
+<Tabs>
+  <Tab title="Buttons (Collect responses)">
+    Buttons let users tap a quick reply instead of typing. To add them:
+
+    1. Click **Add button** in your response editor.
+    2. Choose to create a new button or reuse an existing one.
+    3. Enter a **Title** (the text users see).
+    4. Optionally set a **Payload** to bypass the LLM and directly trigger an intent, set a slot, or send preset text. Leave it empty to use the title as the payload automatically.
+    5. Add as many buttons as needed. Drag and drop to reorder them.
+  </Tab>
+  <Tab title="Links (Message responses)">
+    Links let users tap to open a URL or initiate a phone call or email. Supported link types:
+
+    - External URL: `https://example.com`
+    - Internal app link: `myapp://path?param=value`
+    - Phone call: `tel:+11234567890`
+    - Email: `mailto:support@example.com`
+
+    Click **Add link**, enter a title and URL, and save. Drag to reorder.
+  </Tab>
+</Tabs>
+
+### Referencing Slot Values in Responses
+
+Insert dynamic content into any response by wrapping a slot name in curly braces:
+
+```
+Please confirm that you want to transfer {amount} to {recipient}.
+```
+
+When the assistant sends this message, it replaces the placeholders with the actual values stored in the `amount` and `recipient` slots.
+
+### Conditional Response Variations
+
+You can define alternate versions of a response that only appear when certain slot conditions are met—useful for personalizing messages based on user preferences, account type, or conversation state.
+
+1. Click **Add conditional response variation** under the response.
+2. Name the variation and optionally copy the standard text as a starting point.
+3. Write the alternate text (and buttons if applicable) in the **Response** tab.
+4. Switch to the **Conditions** tab and add slot-value conditions. The variation only appears when all conditions match.
+
+### Custom Responses
+
+For rich interactive experiences—carousels, channel-specific components, or event triggers—switch to the **Custom YAML** tab when editing a response. Write any YAML structure your frontend or messaging channel understands. You can mix plain text and custom YAML in the same response.
+
+### Managing Responses
+
+- Click **Edit** to update a response's name or type.
+- Click **Delete** to remove it from the assistant.
+- Click **See flows** to see which flows reference the response, then navigate to any of them directly.
+
+## Slots
+
+The Slots section gives you a central view of every slot defined in your assistant. Slots are your assistant's memory—they store information the user provides (like their name or a transfer amount) so the assistant can reference it throughout the conversation.
+
+### Creating a Slot
+
+<Steps>
+  <Step title="Open the Slots section">
+    Select **Slots** under **CMS** in the left navigation.
+  </Step>
+  <Step title="Click Create slot">
+    Click the **Create slot** button in the top-right corner.
+  </Step>
+  <Step title="Name and type the slot">
+    Enter a descriptive name and select the appropriate type:
+
+    | Type | Use for |
+    |---|---|
+    | **Text** | Names, cities, free-form strings |
+    | **Float** | Numbers with decimals: amounts, ratings, ages |
+    | **Boolean** | Yes/No or True/False answers |
+    | **Categorical** | A fixed set of labeled options |
+    | **Any** | Arbitrary or mixed data |
+  </Step>
+</Steps>
+
+### Managing Slots
+
+- Select a slot from the list to view and edit its properties.
+- Click **See nodes** to see every flow step that references the slot.
+- Click **Show advanced configuration** to configure slot mappings and initial values.
+- Click **Delete** to remove the slot. Check "See nodes" first to avoid breaking flows that depend on it.
+
+### Slot Mappings
+
+Slot mappings control how the assistant extracts the slot value from the user's message. You can configure these from the slot's advanced settings:
+
+<Accordion title="From LLM (default)">
+  The slot value is extracted by the LLM, which interprets the full message and fills the slot accordingly. Works well for most use cases in CALM assistants.
+</Accordion>
+<Accordion title="From text">
+  The raw text of the user's last message fills the slot. Can be scoped to specific intents or active flows.
+</Accordion>
+<Accordion title="From entity">
+  Fills the slot based on a named entity extracted by the NLU pipeline. Requires specifying the entity name and optionally an intent or role.
+</Accordion>
+<Accordion title="From intent">
+  Sets the slot to a specific value when a matching intent is predicted—useful for binary flags triggered by intent detection.
+</Accordion>
+<Accordion title="From custom action">
+  Delegates slot filling to a custom action you define in Python. The action name must follow the pattern `action_ask_{slot_name}`.
+</Accordion>
+
+<Warning>
+  A slot cannot have both a "From LLM" mapping and NLU-based or custom-action mappings at the same time. Choose one approach per slot.
+</Warning>
+
+## NLU Data
+
+For assistants that use NLU components (rather than pure LLM-based routing), the NLU section lets you manage intents and training examples directly in Studio. You can add, edit, and organize training phrases for each intent, which improves the accuracy of intent prediction in your pipeline.
+
+## Flow Management
+
+The Flows section of the CMS provides a searchable table view of all your conversational flows, sorted by last-edited date. From here you can:
+
+- Search flows by name.
+- View the description and current state of each flow.
+- Duplicate a flow to reuse its logic as a starting point.
+- Delete flows you no longer need (confirm by typing the flow name).
+- Translate flow names for multi-language assistants—Studio uses translated names when the assistant refers to a flow during conversation.
+
+## Version Control
+
+Studio tracks changes to your content automatically. You can save a flow as **Stable** to lock in a reviewed version, and choose whether to train with the latest draft or the stable version. This lets teams continue iterating without risking an unstable version going to production.
+
+<Tip>
+  When you train, Studio lets you select either the **Draft** (latest changes) or **Stable** (last saved snapshot) version of each flow. Use stable versions when you want controlled releases.
+</Tip>

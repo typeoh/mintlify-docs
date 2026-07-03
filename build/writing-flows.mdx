@@ -1,0 +1,207 @@
+---
+title: "Writing Flows to Define Your Assistant's Business Logic"
+sidebarTitle: "Writing Flows"
+description: "Learn how to define CALM flows in YAML to capture the essential steps your assistant follows when completing a specific user goal."
+---
+
+A **flow** in Rasa CALM is a YAML-defined sequence of steps that guides your assistant through completing a specific user goal — for example, blocking a credit card, booking a restaurant, or transferring money. Instead of scripting every possible conversation path, you capture only the business logic that matters: what information to collect, what actions to run, and when to hand off to sub-agents. Flows give you clarity, reusability, and maintainability by keeping each flow focused on a single outcome.
+
+## Three Approaches to Writing Flows
+
+Rasa CALM supports three ways to structure flows depending on how much of the logic you want to control explicitly.
+
+<CardGroup cols={3}>
+  <Card title="Prescriptive" icon="list-check">
+    Define every step explicitly in YAML. Use this when business rules must be enforced consistently — for example, a payment confirmation that always requires explicit user approval.
+  </Card>
+  <Card title="Autonomous" icon="robot">
+    Delegate steps to a ReAct sub-agent or external agent that makes runtime decisions. Use this for open-ended, research-style tasks where the exact path cannot be predetermined.
+  </Card>
+  <Card title="Hybrid" icon="shuffle">
+    Combine prescriptive and autonomous steps in a single flow. You enforce critical rules in YAML while letting AI handle dynamic or tedious-to-script sub-tasks.
+  </Card>
+</CardGroup>
+
+## How Flows Are Triggered
+
+Your assistant selects which flow to run based on the user's message. CALM uses an LLM "command generator" that reads all your flow descriptions alongside the conversation history and current state, then picks the best matching flow. You can also trigger flows in two other ways:
+
+- **NLU trigger** — map a recognized intent directly to a flow using the `nlu_trigger` property.
+- **`link` or `call` step** — start a flow from inside another flow, either as a follow-up (`link`) or as an embedded sub-flow (`call`).
+
+<Note>
+  The LLM reads your flow descriptions to decide which flow to start. A concise, specific description is the single most important factor in getting reliable flow selection.
+</Note>
+
+## The Dialogue Stack
+
+When a flow activates, Rasa places it on top of a **dialogue stack**. The topmost flow is always active. Once it finishes or is cancelled, execution returns to the next flow on the stack. This structure keeps your assistant organised even when users interrupt or pivot to new tasks mid-conversation.
+
+## Writing a Flow: Step-by-Step
+
+<Steps>
+  <Step title="Give it an ID and a clear description">
+    Every flow requires a unique ID and a `description` that tells the LLM what the flow is for. Make the description specific — it is the primary signal the LLM uses to decide when to start this flow.
+
+    ```yaml flows.yml
+    flows:
+      block_card:
+        description: >
+          Block a user's credit card when they suspect fraud
+          or want to freeze it immediately.
+        steps: []
+    ```
+
+    <Tip>
+      **Good:** `"Block a user's credit card if they suspect fraud or want to freeze it"`
+
+      **Less useful:** `"Card blocking request"`
+    </Tip>
+  </Step>
+
+  <Step title="Add your steps">
+    Each step specifies what the assistant should do next. You can collect user input, run actions, set slots, or call other flows.
+
+    <Tabs>
+      <Tab title="collect">
+        Ask the user for information and store it in a slot.
+
+        ```yaml flows.yml
+        flows:
+          block_card:
+            description: Block a user's credit card when they suspect fraud or want to freeze it.
+            steps:
+              - collect: card_number
+                description: "The 16-digit card number to block"
+        ```
+      </Tab>
+      <Tab title="action">
+        Execute a custom action or send a response to the user.
+
+        ```yaml flows.yml
+        flows:
+          block_card:
+            description: Block a user's credit card when they suspect fraud or want to freeze it.
+            steps:
+              - collect: card_number
+                description: "The 16-digit card number to block"
+              - action: action_block_card_in_backend
+        ```
+      </Tab>
+      <Tab title="set_slots">
+        Set or reset slot values directly, without asking the user.
+
+        ```yaml flows.yml
+        flows:
+          block_card:
+            description: Block a user's credit card when they suspect fraud or want to freeze it.
+            steps:
+              - collect: card_number
+              - action: action_block_card_in_backend
+              - set_slots:
+                  - card_number: null
+        ```
+      </Tab>
+      <Tab title="call / link">
+        Embed another flow (`call`) or hand off to it as a follow-up (`link`).
+
+        ```yaml flows.yml
+        flows:
+          block_card:
+            description: Block a user's credit card when they suspect fraud or want to freeze it.
+            steps:
+              - call: authenticate_user_flow
+              - collect: card_number
+              - action: action_block_card_in_backend
+              - link: collect_feedback
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Add branching logic if needed">
+    Use `if`/`then`/`else` conditions to route the conversation based on slot values or other state. Reference slots with the `slots.` namespace prefix.
+
+    ```yaml flows.yml
+    flows:
+      block_card:
+        description: Block a user's credit card when they suspect fraud or want to freeze it.
+        steps:
+          - collect: user_authenticated
+            next:
+              - if: not slots.user_authenticated
+                then:
+                  - action: utter_ask_for_login
+                  - link: authenticate_user_flow
+          - collect: card_number
+          - action: action_block_card_in_backend
+    ```
+  </Step>
+
+  <Step title="Use patterns for conversation repair">
+    You don't need to write custom branching for every possible user detour. Rasa ships with **conversation patterns** — pre-built system flows that handle cancellations, clarifications, human handoffs, and other meta-conversational situations. Rely on them instead of cluttering your flows with defensive branching.
+  </Step>
+</Steps>
+
+## Complete Example: Money Transfer Flow
+
+The following flow collects a recipient and amount, checks whether funds are sufficient, and asks for confirmation before executing the transfer.
+
+```yaml flows.yml
+flows:
+  transfer_money:
+    description: >
+      Let the user send money to a friend or family member.
+      Collects recipient, amount, and confirms before transferring.
+    persisted_slots:
+      - recipient
+    steps:
+      - collect: recipient
+      - id: ask_amount
+        collect: amount
+        description: "The number of US dollars to send"
+      - action: action_check_sufficient_funds
+        next:
+          - if: not slots.has_sufficient_funds
+            then:
+              - action: utter_insufficient_funds
+              - set_slots:
+                  - amount: null
+                next: ask_amount
+          - else: final_confirmation
+      - id: final_confirmation
+        collect: transfer_confirmed
+        ask_before_filling: true
+        next:
+          - if: slots.transfer_confirmed
+            then:
+              - action: action_execute_transfer
+              - action: utter_transfer_complete
+          - else:
+              - action: utter_transfer_cancelled
+```
+
+## Conversation Patterns (System Flows)
+
+In addition to your own flows, Rasa provides **patterns** — reusable system flows for common conversational situations. When a user cancels mid-flow, asks to correct a slot, or triggers a human handoff, a pattern steps in automatically. You can customise these patterns, but in most cases you can leave them as-is and focus your flow authoring on the business logic.
+
+<Note>
+  Read more about customising patterns in the [Customizing Patterns](/concepts/conversation-patterns) guide.
+</Note>
+
+## Key Takeaways
+
+<CardGroup cols={2}>
+  <Card title="Flows define business logic" icon="diagram-project">
+    Flows express what your assistant must do, not every possible conversation path. Keep each flow focused on a single goal.
+  </Card>
+  <Card title="Write descriptive descriptions" icon="pen-to-square">
+    The LLM uses your flow description to decide when to start it. Vague descriptions cause incorrect flow selection.
+  </Card>
+  <Card title="Choose the right approach" icon="sliders">
+    Use prescriptive steps for critical rules, autonomous steps for open-ended tasks, and hybrid flows to combine both.
+  </Card>
+  <Card title="Lean on patterns" icon="wrench">
+    Don't add branching for every detour. Rasa's built-in conversation patterns handle cancellations, clarifications, and repairs automatically.
+  </Card>
+</CardGroup>

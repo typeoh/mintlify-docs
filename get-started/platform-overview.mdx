@@ -1,0 +1,117 @@
+---
+title: "Rasa Platform Overview: Pro-Code and No-Code Together"
+sidebarTitle: "Platform Overview"
+description: "Understand how Rasa Pro and Rasa Studio work together across the build, test, deploy, and review lifecycle for conversational AI development."
+---
+
+The Rasa platform is designed for teams — not just individual developers. It brings together a pro-code framework (Rasa Pro) and a no-code visual editor (Rasa Studio) under one roof, so developers, conversation designers, and business stakeholders can collaborate at every stage of the assistant lifecycle. The result is a predictable, iterative workflow that keeps improving your assistant with every release.
+
+## The four-stage lifecycle
+
+Every Rasa project moves through four repeating stages: **Build**, **Test**, **Deploy**, and **Review**. Each stage has dedicated tools in both Rasa Pro and Rasa Studio.
+
+<Steps>
+  <Step title="Build">
+    Design and develop conversational experiences — everything from writing response content to configuring language models and building custom integrations.
+
+    | Task | Interface |
+    |------|-----------|
+    | Build flows visually with a drag-and-drop editor | Rasa Studio |
+    | Manage templated responses and intent content in a CMS | Rasa Studio |
+    | Train your model after updating flows and content | Rasa Studio |
+    | Write custom Python actions for complex logic and API calls | Rasa Pro |
+    | Configure and fine-tune language models | Rasa Pro |
+    | Set up channel integrations (web, voice, messaging platforms) | Rasa Pro |
+  </Step>
+
+  <Step title="Test">
+    Verify your assistant's behavior before it reaches users.
+
+    | Task | Interface |
+    |------|-----------|
+    | Interactively test and debug flows in the visual inspector | Rasa Studio |
+    | Visualize slot collection, flow navigation, and responses | Rasa Studio |
+    | Run automated end-to-end test suites | Rasa Pro / Studio |
+    | Validate integrations and prevent regressions in CI/CD | Rasa Pro |
+  </Step>
+
+  <Step title="Deploy">
+    Promote your tested assistant to a production environment using your preferred infrastructure.
+
+    | Task | Interface |
+    |------|-----------|
+    | Deploy to on-premises, cloud, or Kubernetes environments | Rasa Pro |
+    | Use built-in versioning and rollback support | Rasa Pro |
+    | Monitor rollouts with real-time observability | Rasa Pro |
+  </Step>
+
+  <Step title="Review">
+    Analyze real conversations and feed insights back into the Build stage for continuous improvement.
+
+    | Task | Interface |
+    |------|-----------|
+    | Browse and filter production conversation logs | Rasa Studio |
+    | Identify patterns, failures, and opportunities for improvement | Rasa Studio |
+    | Track performance metrics and analytics dashboards | Rasa Pro |
+    | Debug live assistant behavior with logs and traces | Rasa Pro |
+  </Step>
+</Steps>
+
+## Rasa Pro vs. Rasa Studio
+
+Choosing the right interface for each task makes your team faster. Here is a quick comparison to help you decide:
+
+<CardGroup cols={2}>
+  <Card title="Rasa Pro" icon="code">
+    **Best for developers and engineers**
+
+    - Full Python-based framework with a transparent file structure
+    - Custom actions, pipeline components, and API integrations
+    - CI/CD-friendly: version-controlled YAML and Python files
+    - Full infrastructure control: self-host, cloud, or Kubernetes
+    - Fine-tune language models and build advanced dialogue logic
+    - Access to all CLI commands, REST APIs, and monitoring tools
+  </Card>
+  <Card title="Rasa Studio" icon="paintbrush">
+    **Best for conversation designers and business users**
+
+    - Visual flow builder — no code needed
+    - Centralized content management for responses and intents
+    - Built-in inspector for testing and debugging conversations
+    - Conversation review panel with filtering and annotation
+    - Empower copywriters and AI trainers without engineering support
+    - Flows built in Studio compile to deployable code automatically
+  </Card>
+</CardGroup>
+
+<Tip>
+  You do not have to choose one or the other. Most production teams use Rasa Studio for fast iteration on flows and content, while developers handle integrations, custom actions, and deployment in Rasa Pro.
+</Tip>
+
+## How the interfaces connect
+
+Rasa Studio runs on top of Rasa Pro — it is not a separate product. Flows you build visually in Studio are stored as structured files that Rasa Pro trains and executes. Custom Python actions written in Rasa Pro automatically surface in Studio for conversation designers to use. This tight integration means your team never has to manually synchronize work between two disconnected tools.
+
+```text
+┌──────────────────────────────┐
+│         Rasa Studio          │  ← Visual editor, content CMS,
+│  (No-code / Low-code)        │    conversation review
+└──────────────┬───────────────┘
+               │ reads & writes flows, content, tests
+┌──────────────▼───────────────┐
+│           Rasa Pro           │  ← CALM engine, custom actions,
+│     (Pro-code framework)     │    training, deployment, monitoring
+└──────────────────────────────┘
+```
+
+## Components at a glance
+
+- **CALM** — Rasa's dialogue management system. It handles the interpretation of user messages and the execution of your business flows.
+- **Flows** — The modular building blocks of your assistant's logic. Each flow represents one task or conversation branch.
+- **Custom Actions** — Python functions that run server-side, enabling API calls, database lookups, and complex business logic.
+- **Slots** — Variables that store information collected during a conversation (e.g., account number, preferred language).
+- **Channels** — Connectors that let your assistant communicate over web chat, voice, SMS, WhatsApp, and more.
+
+<Note>
+  Ready to start building? The [Quick Start guide](/get-started/quickstart) walks you through installing Rasa Pro and running your first agent in minutes.
+</Note>

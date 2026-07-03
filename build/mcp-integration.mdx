@@ -1,0 +1,255 @@
+---
+title: "MCP Integration: Connect Tools and External Services to Rasa"
+sidebarTitle: "MCP Integration"
+description: "Integrate MCP servers with Rasa to give your assistant access to external APIs and databases. Use call steps in flows or ReAct sub-agents for dynamic tool use."
+---
+
+The [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) is an open standard that lets LLM-powered systems communicate with external tools in a structured way. Rasa supports MCP on two levels: you can use **Rasa MCP Tools** to give your IDE copilot Rasa-specific knowledge while you build, and you can connect **external MCP servers** to your assistant so it can call APIs, query databases, and take actions at runtime.
+
+<Note>
+  Native MCP server integration is a beta feature introduced in Rasa Pro 3.14.
+  Rasa MCP Tools (the IDE assistant) are included in Rasa Pro 3.16 and later.
+</Note>
+
+## Rasa MCP Tools — AI-assisted development
+
+Rasa MCP Tools turn your IDE copilot into a Rasa expert. When you run `rasa tools run`, a local MCP server starts that exposes 17 tools across five groups: documentation search, project introspection, schema retrieval, build/validation, and runtime testing. Your IDE agent can then answer questions like "What flows are in this project?" or "Validate my assistant and explain any errors" by calling these tools directly.
+
+### Quick setup
+
+Run the setup wizard from your project root:
+
+```bash
+rasa tools init
+```
+
+The wizard creates `.rasa/tools.yaml`, downloads offline documentation, generates IDE-specific MCP configuration, and installs Rasa skills for your project. Use `-y` to accept all defaults without prompts.
+
+After the wizard finishes, open your IDE from the project root. The `rasa-tools` server should appear in your IDE's MCP settings.
+
+### Manual setup by IDE
+
+<Tabs>
+  <Tab title="Cursor">
+    Create `.cursor/mcp.json` in your project root:
+
+    ```json
+    {
+      "mcpServers": {
+        "rasa-tools": {
+          "command": "rasa",
+          "args": ["tools", "run", "--mode", "stdio"]
+        }
+      }
+    }
+    ```
+
+    Restart Cursor or reload MCP after saving the file.
+  </Tab>
+
+  <Tab title="VS Code">
+    Create `.vscode/mcp.json` in your project root:
+
+    ```json
+    {
+      "servers": {
+        "rasa-tools": {
+          "type": "stdio",
+          "command": "rasa",
+          "args": ["tools", "run", "--mode", "stdio"]
+        }
+      }
+    }
+    ```
+
+    Reload the window. The server appears under **MCP: List Servers** in the command palette.
+  </Tab>
+
+  <Tab title="Claude Code">
+    Claude Code starts non-interactive shells, so use the full path to your `rasa` binary:
+
+    ```bash
+    claude mcp add rasa-tools -- /path/to/.venv/bin/rasa tools run --mode stdio
+    ```
+
+    Run `/mcp` in Claude Code to confirm `rasa-tools` is **Connected**.
+  </Tab>
+
+  <Tab title="JetBrains">
+    Go to **Settings → Tools → AI Assistant → Model Context Protocol (MCP)**, click **Add**, choose **STDIO**, and enter:
+
+    ```json
+    {
+      "mcpServers": {
+        "rasa-tools": {
+          "command": "rasa",
+          "args": ["tools", "run", "--mode", "stdio"]
+        }
+      }
+    }
+    ```
+
+    Set the **Working directory** to your project root and restart the AI Assistant.
+  </Tab>
+</Tabs>
+
+### Example prompts to try
+
+After setup, open a copilot chat and try:
+
+```
+Use rasa-tools to summarize what this assistant can do.
+```
+
+```
+Validate this Rasa project and explain any issues.
+```
+
+```
+Search the Rasa docs for how to add an MCP server to this project.
+```
+
+For runtime testing, start `rasa inspect` first, then:
+
+```
+Talk to the assistant: "hello", "I want to transfer money", "$50", "yes".
+Check if the transfer_money flow completed.
+```
+
+## Connecting external MCP servers to your assistant
+
+Beyond the development tooling, you can connect any MCP-compatible server to your Rasa assistant so your flows can call external APIs and services without writing custom action code.
+
+### Define an MCP server in endpoints.yml
+
+```yaml
+# endpoints.yml
+mcp_servers:
+  - name: trade_server
+    url: http://localhost:8080
+    type: http
+```
+
+### Call an MCP tool directly from a flow
+
+Use the `call` step with `mcp_server` to invoke a specific tool, mapping flow slots to tool parameters and tool output back to slots:
+
+```yaml
+# flows.yml
+flows:
+  buy_order:
+    description: helps users place a buy order for a particular stock
+    steps:
+      - collect: stock_name
+      - collect: order_quantity
+      - action: check_feasibility
+        next:
+          - if: slots.order_feasible is True
+            then:
+              - call: place_buy_order
+                mcp_server: trade_server
+                mapping:
+                  input:
+                    - param: ticker_symbol
+                      slot: stock_name
+                    - param: quantity
+                      slot: order_quantity
+                  output:
+                    - slot: order_status
+                      value: result.structuredContent.order_status.success
+          - else:
+              - action: utter_invalid_order
+                next: END
+```
+
+This approach lets you integrate with external APIs entirely within your flow YAML — no custom Python required.
+
+### Handle tool output
+
+MCP tools return results in two formats:
+
+<Tabs>
+  <Tab title="Structured output">
+    When a tool defines an output schema, results arrive as a structured dictionary accessible via dot notation:
+
+    ```yaml
+    output:
+      - slot: order_status
+        value: result.structuredContent.order_status.success
+    ```
+  </Tab>
+  <Tab title="Unstructured output">
+    When a tool has no output schema, the entire result is serialized as a string:
+
+    ```yaml
+    output:
+      - slot: order_data
+        value: result.content
+    ```
+  </Tab>
+</Tabs>
+
+## Dynamic tool selection with ReAct sub-agents
+
+For more complex scenarios where the right sequence of tool calls depends on runtime context, you can create a **ReAct sub-agent** — an autonomous agent that decides which tools to call in a loop until it has an answer.
+
+### Create a sub-agent
+
+Add a folder under `sub_agents/` with a `config.yml`:
+
+```
+your_project/
+├── config.yml
+├── domain/
+├── data/flows/
+└── sub_agents/
+    └── stock_explorer/
+        ├── config.yml
+        └── prompt_template.jinja2  # optional
+```
+
+```yaml
+# sub_agents/stock_explorer/config.yml
+agent:
+  name: stock_explorer
+  description: "Agent that helps users research and analyze stock options"
+
+connections:
+  mcp_servers:
+    - name: trade_server
+      include_tools:
+        - find_symbol
+        - get_company_news
+        - fetch_live_price
+      exclude_tools:
+        - place_buy_order
+        - delete_account
+```
+
+### Invoke the sub-agent from a flow
+
+```yaml
+# flows.yml
+flows:
+  stock_investment_research:
+    description: helps research and analyze stock investment options
+    steps:
+      - call: stock_explorer
+        exit_if:
+          - slots.user_satisfied is True
+```
+
+The sub-agent runs until it signals completion or the exit condition is met.
+
+<Warning>
+  Always use `include_tools` and `exclude_tools` to limit sub-agent access to
+  only the tools it needs. This prevents unintended side effects, especially for
+  tools that write data or trigger financial transactions.
+</Warning>
+
+## Best practices
+
+- Use descriptive server names in `endpoints.yml` that reflect the service's purpose.
+- Define explicit exit conditions on sub-agent `call` steps to prevent infinite loops.
+- Use `meta_map` on MCP servers for auth tokens and user context you want to forward to the server without exposing to the LLM.
+- Regularly audit which tools each sub-agent can access, particularly in production.

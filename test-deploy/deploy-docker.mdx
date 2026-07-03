@@ -1,0 +1,168 @@
+---
+title: "Deploy Rasa Pro with Docker: Pull, Configure, and Run"
+sidebarTitle: "Docker"
+description: "Pull the Rasa Pro Docker image, pass your license key, mount your project files, and run your assistant with Docker or a custom image."
+---
+
+Docker is the quickest way to get Rasa Pro running. The official image packages everything Rasa Pro needs, so you can go from zero to a running assistant with a single `docker pull` and `docker run`. This guide covers pulling the image, passing your license, mounting your project directory, using optional dependency extras, and extending the image with custom dependencies.
+
+## Pull the Rasa Pro image
+
+The Rasa Pro image is available on Docker Hub at `rasa/rasa-pro`. Replace `RASAVERSION` with your target version—check the [Rasa Pro Changelog](https://rasa.com/docs/reference/changelogs/rasa-pro-changelog/) for the latest release.
+
+```bash
+docker pull rasa/rasa-pro:RASAVERSION
+```
+
+<Note>
+  Always pin your deployment to a specific version tag (e.g., `3.8.0`) rather than using `latest`. This ensures reproducible builds and prevents unexpected upgrades from breaking your assistant.
+</Note>
+
+## Run with your license
+
+Rasa Pro requires a valid license key at runtime. Pass it as the `RASA_LICENSE` environment variable using the `-e` flag. Mount your project directory with `-v` so the container can read your flows, domain, and configuration files:
+
+```bash
+docker run \
+  -v ./:/app \
+  -e RASA_LICENSE=${RASA_LICENSE} \
+  -p 5005:5005 \
+  rasa/rasa-pro:RASAVERSION \
+  run
+```
+
+This starts the Rasa server and exposes port `5005` on your host machine.
+
+## Initialize a new project
+
+To scaffold a new Rasa project, run `init` instead of `run`:
+
+```bash
+docker run \
+  -v ./:/app \
+  -e RASA_LICENSE=${RASA_LICENSE} \
+  rasa/rasa-pro:RASAVERSION \
+  init --no-prompt --template tutorial
+```
+
+## Train your assistant
+
+Run `train` to compile your flows, domain, and configuration into a model:
+
+```bash
+docker run \
+  -v ./:/app \
+  -e RASA_LICENSE=${RASA_LICENSE} \
+  -e OPENAI_API_KEY=${OPENAI_API_KEY} \
+  rasa/rasa-pro:RASAVERSION \
+  train --domain /app/domain --data /app/data --out /app/models
+```
+
+## Optional dependency extras
+
+The default Rasa Pro image already includes `nlu` and `channels` extras. You can extend it with additional optional dependencies if your assistant requires them:
+
+| Extra | Contents |
+|---|---|
+| `nlu` | NLU components (included by default) |
+| `channels` | Channel connector dependencies (included by default) |
+| `full` | All optional dependencies |
+
+## Volume mounts
+
+When running any Rasa command through Docker, mount your project directory so the container can access your files:
+
+```bash
+docker run \
+  -v /path/to/your/project:/app \
+  -e RASA_LICENSE=${RASA_LICENSE} \
+  rasa/rasa-pro:RASAVERSION \
+  <command>
+```
+
+The `-v ./:/app` syntax mounts the current directory to `/app` inside the container, which is the working directory Rasa expects.
+
+## Extending the image
+
+If you need dependencies that aren't in the base image—such as a specific spaCy model or a library for your custom actions—create a custom `Dockerfile` that extends the official image:
+
+```dockerfile
+# Extend the official Rasa Pro image
+FROM rasa/rasa-pro:RASAVERSION
+
+# Install all optional dependencies
+RUN pip install rasa[full]
+
+# Or install individual packages
+RUN pip install rasa[spacy]
+
+# Add your own requirements
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+```
+
+Build and run your custom image:
+
+```bash
+# Build the custom image
+docker build -t my-rasa-assistant:latest .
+
+# Run the custom image
+docker run \
+  -v ./:/app \
+  -e RASA_LICENSE=${RASA_LICENSE} \
+  -e OPENAI_API_KEY=${OPENAI_API_KEY} \
+  -p 5005:5005 \
+  my-rasa-assistant:latest \
+  run
+```
+
+## Environment variables
+
+Pass all sensitive values and configuration as environment variables using `-e` flags. Never bake secrets into your `Dockerfile` or commit them to version control.
+
+<Tabs>
+  <Tab title="Required">
+    | Variable | Description |
+    |---|---|
+    | `RASA_LICENSE` | Your Rasa Pro license key |
+    | `OPENAI_API_KEY` | OpenAI API key (for CALM assistants using OpenAI) |
+  </Tab>
+  <Tab title="Common optional">
+    | Variable | Description |
+    |---|---|
+    | `RASA_TELEMETRY_ENABLED` | Set to `false` to disable telemetry in CI/CD |
+    | `ANTHROPIC_API_KEY` | Anthropic API key if using Claude models |
+    | `AZURE_OPENAI_API_KEY` | Azure OpenAI key if using Azure-hosted models |
+    | `LANGFUSE_PUBLIC_KEY` | Langfuse public key for LLM tracing |
+    | `LANGFUSE_PRIVATE_KEY` | Langfuse private key for LLM tracing |
+  </Tab>
+</Tabs>
+
+You can also store environment variables in a `.env` file and load them with `--env-file`:
+
+```bash
+docker run \
+  -v ./:/app \
+  --env-file .env \
+  -p 5005:5005 \
+  rasa/rasa-pro:RASAVERSION \
+  run
+```
+
+<Warning>
+  Never commit your `.env` file to version control. Add it to your `.gitignore` to prevent accidental exposure of your license key and API credentials.
+</Warning>
+
+## Docker Compose for local development
+
+For a development environment that includes Rasa and an action server together, use Docker Compose. The [developer edition template](https://github.com/RasaHQ/developer-edition-docker-compose) provides a ready-to-use `docker-compose.yml` that sets up both services with shared networking:
+
+```bash
+git clone https://github.com/RasaHQ/developer-edition-docker-compose
+cd developer-edition-docker-compose
+# Configure your .env file, then:
+docker compose up
+```
+
+This typically takes under 20 minutes to have a fully running local assistant, including VM provisioning time.
